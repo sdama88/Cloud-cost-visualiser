@@ -1,4 +1,4 @@
-current_gpu,upgrade_gpu,min_users
+current_gpu,upgrade_gpu,user_threshold
 H100,B200,30
 A100,H200,200
 L40S,H200,500
