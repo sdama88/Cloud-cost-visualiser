@@ -113,8 +113,14 @@ with col2:
 # -------------------
 user_values = list(range(10, 1001, 10))
 cost_values = []
+
 for u in user_values:
-    gpus_needed = max(1, int((u / users_per_gpu)))
+    # Start with default workload GPU
+    gpu_sel = default_gpu_type
+    users_per_gpu_for_calc = workload_row["users_per_gpu"]
+
+    # GPUs needed with hyperscaler rounding
+    gpus_needed = max(1, int((u / users_per_gpu_for_calc)))
     if gpus_needed <= 4:
         gpus_needed = 4
     elif gpus_needed <= 8:
@@ -122,17 +128,20 @@ for u in user_values:
     elif gpus_needed <= 16:
         gpus_needed = 16
 
-   # Silent upgrade for each point
-gpu_sel = default_gpu_type
-upgrade_check = upgrade_rules_df[(upgrade_rules_df["current_gpu"] == gpu_sel) &
-                                 (u >= upgrade_rules_df["user_threshold"])]
-if not upgrade_check.empty:
-    gpu_sel = upgrade_check.iloc[0]["upgrade_gpu"]
+    # Silent upgrade if threshold reached
+    upgrade_check = upgrade_rules_df[
+        (upgrade_rules_df["current_gpu"] == gpu_sel) &
+        (u >= upgrade_rules_df["user_threshold"])
+    ]
+    if not upgrade_check.empty:
+        gpu_sel = upgrade_check.iloc[0]["upgrade_gpu"]
 
+    # Pricing for selected GPU at this scale
     g_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_sel, "gpu_hourly_usd"].values[0]
     s_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_sel, "storage_price_per_gb_month"].values[0]
     e_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_sel, "egress_price_per_gb"].values[0]
 
+    # Storage and egress for selected GPU and user count
     s_gb = gpus_needed * (workload_row["storage_gb_per_gpu_base"] + (u * workload_row["storage_gb_per_user"]))
     e_gb = gpus_needed * (workload_row["egress_gb_per_gpu_base"] + (u * workload_row["egress_gb_per_user"]))
 
@@ -140,7 +149,12 @@ if not upgrade_check.empty:
     cost_values.append(total_cost)
 
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=user_values, y=cost_values, mode='lines', line=dict(color=REDSAND_RED, width=3)))
+fig.add_trace(go.Scatter(
+    x=user_values, 
+    y=cost_values, 
+    mode='lines', 
+    line=dict(color=REDSAND_RED, width=3, shape='spline')  # smooth curve
+))
 fig.update_layout(
     title="Scaling Impact on Monthly Cloud Costs",
     xaxis_title="Concurrent Users",
