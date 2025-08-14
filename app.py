@@ -46,30 +46,35 @@ user_range = list(range(10, 1001, 10))
 num_users = st.slider("Select number of users", min_value=10, max_value=1000, step=10, value=10)
 
 # -------------------
-# AUTO GPU SELECTION
+# AUTO GPU SELECTION WITH SILENT UPGRADE
 # -------------------
+# Start with base workload config
 workload_row = workloads_df[workloads_df["workload_name"] == workload_name].iloc[0]
-default_gpu_type = workload_row["gpu_type"]
-users_per_gpu = workload_row["users_per_gpu"]
+gpu_type = workload_row["gpu_type"]
 
-auto_gpus_needed = max(1, int((num_users / users_per_gpu)))
-# Round up to hyperscaler-friendly sizes (4, 8, 16, etc.)
-if auto_gpus_needed <= 4:
-    auto_gpus_needed = 4
-elif auto_gpus_needed <= 8:
-    auto_gpus_needed = 8
-elif auto_gpus_needed <= 16:
-    auto_gpus_needed = 16
-
-gpu_type = default_gpu_type
-
-# -------------------
-# SILENT GPU UPGRADE
-# -------------------
-upgrade_row = upgrade_rules_df[(upgrade_rules_df["current_gpu"] == gpu_type) &
-                                (num_users >= upgrade_rules_df["user_threshold"])]
+# Check for silent upgrade first
+upgrade_row = upgrade_rules_df[
+    (upgrade_rules_df["current_gpu"] == gpu_type) &
+    (num_users >= upgrade_rules_df["user_threshold"])
+]
 if not upgrade_row.empty:
-    gpu_type = upgrade_row.iloc[0]["upgrade_gpu"]
+    gpu_type = upgrade_row.iloc[0]["new_gpu"]
+
+# Get the correct users_per_gpu for the (possibly upgraded) GPU
+gpu_users_per_gpu = workloads_df.loc[workloads_df["gpu_type"] == gpu_type, "users_per_gpu"].values[0]
+
+# Calculate GPUs needed based on upgraded GPU type
+gpus_needed = max(1, int((num_users / gpu_users_per_gpu)))
+
+# Apply hyperscaler-friendly rounding
+if gpus_needed <= 4:
+    gpus_needed = 4
+elif gpus_needed <= 8:
+    gpus_needed = 8
+elif gpus_needed <= 16:
+    gpus_needed = 16
+
+auto_gpus_needed = gpus_needed
 
 # -------------------
 # COST CALCULATIONS
@@ -109,18 +114,30 @@ with col2:
     st.metric("💰 Total Monthly Cost", f"${total_monthly_cost:,.0f}")
 
 # -------------------
-# COST SCALING GRAPH
+# COST SCALING GRAPH (fixed)
 # -------------------
 user_values = list(range(10, 1001, 10))
 cost_values = []
 
 for u in user_values:
-    # Start with default workload GPU
-    gpu_sel = default_gpu_type
-    users_per_gpu_for_calc = workload_row["users_per_gpu"]
+    # Start with base GPU type for the workload
+    gpu_sel = workload_row["gpu_type"]
 
-    # GPUs needed with hyperscaler rounding
-    gpus_needed = max(1, int((u / users_per_gpu_for_calc)))
+    # Check for silent upgrade
+    upgrade_check = upgrade_rules_df[
+        (upgrade_rules_df["current_gpu"] == gpu_sel) &
+        (u >= upgrade_rules_df["user_threshold"])
+    ]
+    if not upgrade_check.empty:
+        gpu_sel = upgrade_check.iloc[0]["new_gpu"]
+
+    # Get users_per_gpu for selected (possibly upgraded) GPU
+    gpu_users_per_gpu = workloads_df.loc[workloads_df["gpu_type"] == gpu_sel, "users_per_gpu"].values[0]
+
+    # Calculate GPUs needed
+    gpus_needed = max(1, int((u / gpu_users_per_gpu)))
+
+    # Apply hyperscaler-friendly rounding
     if gpus_needed <= 4:
         gpus_needed = 4
     elif gpus_needed <= 8:
@@ -128,39 +145,13 @@ for u in user_values:
     elif gpus_needed <= 16:
         gpus_needed = 16
 
-    # Silent upgrade if threshold reached
-    upgrade_check = upgrade_rules_df[
-        (upgrade_rules_df["current_gpu"] == gpu_sel) &
-        (u >= upgrade_rules_df["user_threshold"])
-    ]
-    if not upgrade_check.empty:
-        gpu_sel = upgrade_check.iloc[0]["upgrade_gpu"]
-
-    # Pricing for selected GPU at this scale
+    # Pricing and usage calculations
     g_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_sel, "gpu_hourly_usd"].values[0]
     s_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_sel, "storage_price_per_gb_month"].values[0]
     e_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_sel, "egress_price_per_gb"].values[0]
 
-    # Storage and egress for selected GPU and user count
     s_gb = gpus_needed * (workload_row["storage_gb_per_gpu_base"] + (u * workload_row["storage_gb_per_user"]))
     e_gb = gpus_needed * (workload_row["egress_gb_per_gpu_base"] + (u * workload_row["egress_gb_per_user"]))
 
     total_cost = (g_price * 24 * 30 * gpus_needed) + (s_price * s_gb) + (e_price * e_gb)
     cost_values.append(total_cost)
-
-fig = go.Figure()
-fig.add_trace(go.Scatter(
-    x=user_values, 
-    y=cost_values, 
-    mode='lines', 
-    line=dict(color=REDSAND_RED, width=3, shape='spline')  # smooth curve
-))
-fig.update_layout(
-    title="Scaling Impact on Monthly Cloud Costs",
-    xaxis_title="Concurrent Users",
-    yaxis_title="Monthly Cost (USD)",
-    plot_bgcolor=REDSAND_GREY,
-    paper_bgcolor=REDSAND_GREY,
-    font=dict(color=REDSAND_DARK)
-)
-st.plotly_chart(fig, use_container_width=True)
