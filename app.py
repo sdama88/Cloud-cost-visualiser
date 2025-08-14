@@ -10,7 +10,7 @@ from io import BytesIO
 # -------------------
 # CONFIG
 # -------------------
-SHEET_ID = "YOUR_SHEET_ID"  # Replace with new sheet ID
+SHEET_ID = "1fz_jPB2GkHgbAhlZmHOr4g0MVQW3Wyw_jg_nLmmkHIk"  # Replace with new sheet ID
 WORKLOADS_SHEET = "workloads"
 PRICING_SHEET = "pricing"
 GPU_CONFIGS_SHEET = "gpu_configs"
