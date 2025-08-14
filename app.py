@@ -71,8 +71,7 @@ st.markdown("""
     .big-metric {
         font-size: 4em !important;
         font-weight: bold;
-        color: #FF4B4B;
-        text-shadow: 0px 0px 10px rgba(255, 75, 75, 0.7);
+        color: #FF0000; /* Normal red */
     }
     .sub-metric {
         font-size: 1.2em !important;
@@ -145,7 +144,7 @@ with col2:
         chart_data.append({"Concurrent Users": users, "Monthly Cost": total})
 
     chart_df = pd.DataFrame(chart_data)
-    line_chart = alt.Chart(chart_df).mark_line(color="#FF4B4B", strokeWidth=3).encode(
+    line_chart = alt.Chart(chart_df).mark_line(color="#FF0000", strokeWidth=3).encode(
         x=alt.X("Concurrent Users", title="People Using it at the Same Time"),
         y=alt.Y("Monthly Cost", title=f"Monthly Cost ({currency})"),
         tooltip=["Concurrent Users", "Monthly Cost"]
