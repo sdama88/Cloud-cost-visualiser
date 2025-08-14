@@ -31,12 +31,16 @@ def load_sheet(sheet_name):
     spreadsheet = client.open_by_key(SHEET_ID)
     ws = spreadsheet.worksheet(sheet_name.strip())
     df = pd.DataFrame(ws.get_all_records())
-    df.columns = df.columns.str.strip().str.replace('"', '').str.replace("'", "")
+    # Normalize column names to lowercase and strip spaces/quotes
+    df.columns = df.columns.str.strip().str.replace('"', '').str.replace("'", "").str.lower()
     return df
 
-workloads_df = load_sheet(WORKLOADS)
-pricing_df = load_sheet(PRICING)
-gpu_configs_df = load_sheet(GPU_CONFIGS)
+# -------------------
+# LOAD DATA
+# -------------------
+workloads_df = load_sheet(WORKLOADS_SHEET)
+pricing_df = load_sheet(PRICING_SHEET)
+gpu_configs_df = load_sheet(GPU_CONFIGS_SHEET)
 
 # -------------------
 # UI SETUP
@@ -75,19 +79,18 @@ num_users = st.select_slider("Select number of users", options=user_range)
 workload_row = workloads_df[workloads_df["workload_name"] == workload_name].iloc[0]
 default_gpu_type = workload_row["gpu_type"]
 users_per_gpu = workload_row["users_per_gpu"]
-auto_gpus_needed = max(1, int(num_users / users_per_gpu))
 
-st.markdown(f"**Auto-selected GPU Type:** {default_gpu_type} ({auto_gpus_needed} GPUs)")
+# Auto calculation
+auto_gpus_needed = max(1, int((num_users / users_per_gpu)))
 
 # STEP 4: MANUAL OVERRIDE
 manual_mode = st.checkbox("Manual GPU selection", value=False)
 
 if manual_mode:
-    try:
-        default_index = int(pricing_df[pricing_df["gpu_type"] == default_gpu_type].index[0])
-    except:
+    if default_gpu_type in pricing_df["gpu_type"].values:
+        default_index = pricing_df[pricing_df["gpu_type"] == default_gpu_type].index[0]
+    else:
         default_index = 0
-
     gpu_type = st.selectbox("GPU Type", pricing_df["gpu_type"].unique(), index=default_index)
     num_gpus = st.number_input("Number of GPUs", min_value=1, value=auto_gpus_needed)
     if num_gpus < auto_gpus_needed:
@@ -116,14 +119,28 @@ total_monthly_cost = gpu_monthly_cost + storage_monthly_cost + egress_monthly_co
 # -------------------
 # DISPLAY COSTS
 # -------------------
-st.markdown(f"<h2 style='color:{REDSAND_RED}; font-size: 40px;'>💰 Total Monthly Cost: ${total_monthly_cost:,.0f}</h2>", unsafe_allow_html=True)
+st.markdown(f"<h2 style='color:{REDSAND_RED};'>💰 Total Monthly Cost: ${total_monthly_cost:,.0f}</h2>", unsafe_allow_html=True)
 
-# Cost breakdown chart (stacked bar)
+# Cost breakdown chart
 fig = go.Figure()
-fig.add_trace(go.Bar(name="GPU Cost", x=["Total Cost"], y=[gpu_monthly_cost], marker_color=REDSAND_RED))
-fig.add_trace(go.Bar(name="Storage Cost", x=["Total Cost"], y=[storage_monthly_cost], marker_color="#666666"))
-fig.add_trace(go.Bar(name="Egress Cost", x=["Total Cost"], y=[egress_monthly_cost], marker_color="#999999"))
-
+fig.add_trace(go.Bar(
+    name="GPU Cost",
+    x=["Total Cost"],
+    y=[gpu_monthly_cost],
+    marker_color=REDSAND_RED
+))
+fig.add_trace(go.Bar(
+    name="Storage Cost",
+    x=["Total Cost"],
+    y=[storage_monthly_cost],
+    marker_color="#666666"
+))
+fig.add_trace(go.Bar(
+    name="Egress Cost",
+    x=["Total Cost"],
+    y=[egress_monthly_cost],
+    marker_color="#999999"
+))
 fig.update_layout(
     barmode='stack',
     title="Cost Breakdown",
@@ -131,7 +148,6 @@ fig.update_layout(
     paper_bgcolor=REDSAND_GREY,
     font=dict(color=REDSAND_DARK)
 )
-
 st.plotly_chart(fig, use_container_width=True)
 
 # -------------------
