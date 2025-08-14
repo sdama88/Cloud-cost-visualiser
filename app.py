@@ -31,7 +31,6 @@ with col2:
 SHEET_ID = "1fz_jPB2GkHgbAhlZmHOr4g0MVQW3Wyw_jg_nLmmkHIk"
 WORKLOADS_SHEET = "workloads"
 PRICING_SHEET = "pricing"
-CONFIG_SHEET = "config"
 
 # Authenticate with GCP
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -42,13 +41,12 @@ client = gspread.authorize(creds)
 def load_sheet(sheet_name):
     ws = client.open_by_key(SHEET_ID).worksheet(sheet_name)
     df = pd.DataFrame(ws.get_all_records())
-    df.columns = df.columns.str.strip()  # Remove extra spaces from headers
+    df.columns = df.columns.str.strip()
     return df
 
 # ======= LOAD DATA =======
 workloads_df = load_sheet(WORKLOADS_SHEET)
 pricing_df = load_sheet(PRICING_SHEET)
-config_df = load_sheet(CONFIG_SHEET)
 
 # ======= INPUTS =======
 selected_workload = st.selectbox("Select Workload", workloads_df["workload_name"].unique())
@@ -59,15 +57,18 @@ gpu_type = workload_row["gpu_type"]
 base_gpus = workload_row["base_gpus"]
 users_per_gpu = workload_row["users_per_gpu"]
 storage_gb_per_gpu = workload_row["storage_gb_per_gpu"]
-egress_gb_per_gpu_base = workload_row["egress_gb_per_gpu_base"]
+egress_gb_per_gpu_base = workload_row["egress_gb_per_gpu"]
 egress_gb_per_user = workload_row["egress_gb_per_user"]
 
-# Pricing
-gpu_hourly = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "gpu_hourly_usd"].values[0]
-storage_price_per_gb = config_df.loc[0, "storage_price_per_gb"]
-egress_price_per_gb = config_df.loc[0, "egress_price_per_gb"]
-hours_per_month = config_df.loc[0, "hours_per_month"]
-currency = config_df.loc[0, "currency"]
+# Pricing from same sheet
+gpu_row = pricing_df[pricing_df["gpu_type"] == gpu_type].iloc[0]
+gpu_hourly = gpu_row["gpu_hourly_usd"]
+storage_price_per_gb = gpu_row["storage_price_per_gb_month"]
+egress_price_per_gb = gpu_row["egress_price_per_gb"]
+
+# Fixed constants
+hours_per_month = 730
+currency = "USD"
 
 # ======= SLIDER =======
 max_users = 1000
@@ -91,7 +92,6 @@ storage_list = []
 egress_list = []
 
 for u in user_range:
-    # Smooth scaling for exhibition effect
     g_count = base_gpus * (u / (users_per_gpu * base_gpus))
     g_count = max(base_gpus, g_count)
 
