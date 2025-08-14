@@ -13,38 +13,30 @@ REDSAND_GREY = "#F4F4F4"
 REDSAND_DARK = "#222222"
 
 # -------------------
-# HELPER FUNCTIONS
+# LOAD CSV FILES
 # -------------------
-def load_csv_clean(path):
-    """Load CSV and normalize headers."""
-    df = pd.read_csv(path)
-    df.columns = (
-        df.columns
-        .str.strip()
-        .str.lower()
-        .str.replace(" ", "_")
-        .str.replace('"', '')
-        .str.replace("'", '')
-    )
-    return df
+workloads_df = pd.read_csv("workloads.csv")
+pricing_df = pd.read_csv("pricing.csv")
+gpu_configs_df = pd.read_csv("gpu_configs.csv")
+
+# Strip column names
+workloads_df.columns = workloads_df.columns.str.strip()
+pricing_df.columns = pricing_df.columns.str.strip()
+gpu_configs_df.columns = gpu_configs_df.columns.str.strip()
 
 # -------------------
-# LOAD DATA
-# -------------------
-workloads_df = load_csv_clean("workloads.csv")
-pricing_df = load_csv_clean("pricing.csv")
-gpu_configs_df = load_csv_clean("gpu_configs.csv")
-
-# -------------------
-# UI SETUP
+# STREAMLIT PAGE CONFIG
 # -------------------
 st.set_page_config(page_title="Cloud GPU Cost Visualiser", page_icon="☁️", layout="wide")
 
-# Logo
+# -------------------
+# LOGO + TITLE
+# -------------------
 logo = Image.open("logo.png")
 buffered = BytesIO()
 logo.save(buffered, format="PNG")
 img_str = base64.b64encode(buffered.getvalue()).decode()
+
 st.markdown(
     f"""
     <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -58,60 +50,71 @@ st.markdown(
 )
 
 # -------------------
-# STEP 1: SELECT WORKLOAD
+# MAIN LAYOUT
 # -------------------
-st.subheader("Select Workload")
-workload_name = st.selectbox("Workload", workloads_df["workload_name"].unique())
+left_col, right_col = st.columns([2, 1])
 
-# STEP 2: NUMBER OF USERS
-st.subheader("Number of Users")
-user_range = list(range(10, 110, 10)) + list(range(200, 10001, 100))
-num_users = st.select_slider("Select number of users", options=user_range)
+with left_col:
+    # STEP 1: SELECT WORKLOAD
+    st.subheader("Select Workload")
+    workload_name = st.selectbox("Workload", workloads_df["workload_name"].unique())
+    workload_row = workloads_df[workloads_df["workload_name"] == workload_name].iloc[0]
 
-# -------------------
-# STEP 3: AUTO GPU SELECTION
-# -------------------
-workload_row = workloads_df[workloads_df["workload_name"] == workload_name].iloc[0]
-default_gpu_type = workload_row["gpu_type"]
+    # STEP 2: NUMBER OF USERS
+    st.subheader("Number of Users")
+    user_range = list(range(10, 110, 10)) + list(range(200, 10001, 100))
+    num_users = st.select_slider("Select number of users", options=user_range)
 
-users_per_gpu = workload_row["users_per_gpu"]
-auto_gpus_needed = max(1, int((num_users / users_per_gpu)))
+    # STEP 3: AUTO GPU CALC
+    default_gpu_type = workload_row["gpu_type"]
+    users_per_gpu = workload_row["users_per_gpu"]
+    auto_gpus_needed = max(1, int(num_users / users_per_gpu))
 
-# -------------------
-# STEP 4: MANUAL OVERRIDE
-# -------------------
-manual_mode = st.checkbox("Manual GPU selection", value=False)
-gpu_type_resolved = False
-
-if manual_mode:
-    gpu_type_options = pricing_df["gpu_type"].unique()
-    selected_index = pricing_df[pricing_df["gpu_type"] == default_gpu_type].index
-    default_index = int(selected_index[0]) if not selected_index.empty else 0
-
-    gpu_type = st.selectbox(
-        "GPU Type",
-        options=gpu_type_options,
-        index=default_index,
-        key="manual_gpu_type"
-    )
-
-    num_gpus = st.number_input("Number of GPUs", min_value=1, value=auto_gpus_needed)
-    if num_gpus < auto_gpus_needed:
-        st.warning(f"⚠️ Selected GPUs may be underpowered. Recommended: {auto_gpus_needed} GPUs")
-
-    gpu_type_resolved = True
-
-else:
+    # STEP 4: MANUAL GPU SELECTION
+    manual_mode = st.checkbox("Manual GPU selection", value=False)
     gpu_type = default_gpu_type
     num_gpus = auto_gpus_needed
-    gpu_type_resolved = True
+
+    if manual_mode:
+        gpu_type_options = pricing_df["gpu_type"].unique()
+        if default_gpu_type in gpu_type_options:
+            default_index = list(gpu_type_options).index(default_gpu_type)
+        else:
+            default_index = 0
+
+        gpu_type = st.selectbox(
+            "GPU Type",
+            options=gpu_type_options,
+            index=default_index,
+            key="manual_gpu_type"
+        )
+        num_gpus = st.number_input("Number of GPUs", min_value=1, value=auto_gpus_needed)
+        if num_gpus < auto_gpus_needed:
+            st.warning(f"⚠️ Selected GPUs may be underpowered. Recommended: {auto_gpus_needed} GPUs")
+
+with right_col:
+    st.markdown(
+        f"""
+        <div style="background-color:{REDSAND_GREY}; padding: 20px; border-radius: 12px; box-shadow: 0px 4px 6px rgba(0,0,0,0.1);">
+            <h3 style="color:{REDSAND_RED};">📋 Selected Configuration</h3>
+            <p><strong>Workload:</strong> {workload_name}</p>
+            <p><strong>Users:</strong> {num_users}</p>
+            <p><strong>GPU Type:</strong> {gpu_type}</p>
+            <p><strong>Number of GPUs:</strong> {num_gpus}</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 # -------------------
-# STEP 5: COST CALCULATION & DISPLAY
+# CALCULATION ON BUTTON CLICK
 # -------------------
-if gpu_type_resolved and gpu_type and num_gpus > 0:
+st.markdown("---")
+if st.button("Calculate Costs"):
     gpu_row = pricing_df[pricing_df["gpu_type"] == gpu_type]
-    if not gpu_row.empty:
+    if gpu_row.empty:
+        st.error("❌ Selected GPU type not found in pricing data.")
+    else:
         gpu_price = gpu_row["gpu_hourly_usd"].values[0]
         storage_price = gpu_row["storage_price_per_gb_month"].values[0]
         egress_price = gpu_row["egress_price_per_gb"].values[0]
@@ -127,13 +130,11 @@ if gpu_type_resolved and gpu_type and num_gpus > 0:
         egress_monthly_cost = egress_price * egress_gb
         total_monthly_cost = gpu_monthly_cost + storage_monthly_cost + egress_monthly_cost
 
-        # Show selected GPU config
-        st.markdown(f"**Selected GPU Configuration:** {gpu_type} × {num_gpus}")
+        st.markdown(
+            f"<h2 style='color:{REDSAND_RED};'>💰 Total Monthly Cost: ${total_monthly_cost:,.0f}</h2>",
+            unsafe_allow_html=True
+        )
 
-        # Display total
-        st.markdown(f"<h2 style='color:{REDSAND_RED};'>💰 Total Monthly Cost: ${total_monthly_cost:,.0f}</h2>", unsafe_allow_html=True)
-
-        # Cost breakdown chart
         fig = go.Figure()
         fig.add_trace(go.Bar(name="GPU Cost", x=["Total Cost"], y=[gpu_monthly_cost], marker_color=REDSAND_RED))
         fig.add_trace(go.Bar(name="Storage Cost", x=["Total Cost"], y=[storage_monthly_cost], marker_color="#666666"))
@@ -146,6 +147,7 @@ if gpu_type_resolved and gpu_type and num_gpus > 0:
             font=dict(color=REDSAND_DARK)
         )
         st.plotly_chart(fig, use_container_width=True)
+
 # -------------------
 # FOOTNOTES
 # -------------------
