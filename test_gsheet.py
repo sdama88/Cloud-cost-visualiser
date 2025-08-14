@@ -22,5 +22,6 @@ try:
     st.dataframe(pd.DataFrame(data).head())
 
 except Exception as e:
+    import traceback
     st.error("❌ Could not connect to the sheet")
-    st.code(str(e))  # Show exact error text from Google
+    st.code(traceback.format_exc())  # full stack trace + Google error
