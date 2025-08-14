@@ -1,4 +1,6 @@
-gpu_type,vram_gb,tflops_fp16,tflops_fp32
-L40S,48,90,45
-H100,80,1979,989
-A100,80,312,156
+gpu_type,vram_gb,tflops_fp32,tflops_fp16
+A100,40,19.5,156
+L40S,48,30,240
+H100,80,51,1000
+H200,141,60,1200
+B200,192,75,1500
