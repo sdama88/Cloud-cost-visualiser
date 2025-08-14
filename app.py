@@ -41,7 +41,7 @@ client = gspread.authorize(creds)
 def load_sheet(sheet_name):
     ws = client.open_by_key(SHEET_ID).worksheet(sheet_name)
     df = pd.DataFrame(ws.get_all_records())
-    df.columns = df.columns.str.strip()
+    df.columns = df.columns.str.strip().str.replace('"', '').str.replace('\n', '')
     return df
 
 # ======= LOAD DATA =======
