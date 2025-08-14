@@ -34,9 +34,9 @@ def load_sheet(sheet_name):
     df.columns = df.columns.str.strip().str.replace('"', '').str.replace("'", "")
     return df
 
-workloads_df = load_sheet(WORKLOADS_SHEET)
-pricing_df = load_sheet(PRICING_SHEET)
-gpu_configs_df = load_sheet(GPU_CONFIGS_SHEET)
+workloads_df = load_sheet(WORKLOADS)
+pricing_df = load_sheet(PRICING)
+gpu_configs_df = load_sheet(GPU_CONFIGS)
 
 # -------------------
 # UI SETUP
