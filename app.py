@@ -75,52 +75,38 @@ users_per_gpu = workload_row["users_per_gpu"]
 
 auto_gpus_needed = max(1, int((num_users / users_per_gpu)))
 
-# STEP 4: GPU SELECTION (Auto + Manual)
-st.subheader("GPU Selection")
-
-# Auto calculate required GPUs
-users_per_gpu = workload_row["users_per_gpu"]
-auto_gpus_needed = max(1, int((num_users / users_per_gpu)))
-default_gpu_type = workload_row["gpu_type"]
-
-manual_mode = st.checkbox("Manual GPU selection", value=False)
+# -------------------
+# STEP 4: GPU SELECTION
+# -------------------
+gpu_type_resolved = False
 
 if manual_mode:
-    gpu_list = pricing_df["gpu_type"].unique()
-    if default_gpu_type in gpu_list:
-        default_index = int(pricing_df[pricing_df["gpu_type"] == default_gpu_type].index[0])
-    else:
-        default_index = 0  # fallback if not found
+    gpu_type_options = pricing_df["gpu_type"].unique()
+    selected_index = pricing_df[pricing_df["gpu_type"] == default_gpu_type].index
+    default_index = int(selected_index[0]) if not selected_index.empty else 0
 
     gpu_type = st.selectbox(
         "GPU Type",
-        gpu_list,
+        options=gpu_type_options,
         index=default_index,
         key="manual_gpu_type"
     )
-    num_gpus = st.number_input("Number of GPUs", min_value=1, value=auto_gpus_needed, key="manual_gpu_count")
 
+    num_gpus = st.number_input("Number of GPUs", min_value=1, value=auto_gpus_needed)
     if num_gpus < auto_gpus_needed:
         st.warning(f"⚠️ Selected GPUs may be underpowered. Recommended: {auto_gpus_needed} GPUs")
 
-    selection_source = "Manual"
+    gpu_type_resolved = True
+
 else:
     gpu_type = default_gpu_type
     num_gpus = auto_gpus_needed
-    selection_source = "Automatic"
-
-# Display selected GPU config
-st.markdown(
-    f"<div style='background-color:#F4F4F4;padding:10px;border-radius:8px;'>"
-    f"<strong>Selected GPU Configuration ({selection_source}):</strong> "
-    f"{num_gpus} × {gpu_type}</div>",
-    unsafe_allow_html=True
-)
+    gpu_type_resolved = True
 
 # -------------------
 # STEP 5: COST CALCULATION & DISPLAY
 # -------------------
-if gpu_type and num_gpus > 0:
+if gpu_type_resolved and gpu_type and num_gpus > 0:
     gpu_row = pricing_df[pricing_df["gpu_type"] == gpu_type]
     if not gpu_row.empty:
         gpu_price = gpu_row["gpu_hourly_usd"].values[0]
@@ -137,6 +123,9 @@ if gpu_type and num_gpus > 0:
         storage_monthly_cost = storage_price * storage_gb
         egress_monthly_cost = egress_price * egress_gb
         total_monthly_cost = gpu_monthly_cost + storage_monthly_cost + egress_monthly_cost
+
+        # Show selected GPU config
+        st.markdown(f"**Selected GPU Configuration:** {gpu_type} × {num_gpus}")
 
         # Display total
         st.markdown(f"<h2 style='color:{REDSAND_RED};'>💰 Total Monthly Cost: ${total_monthly_cost:,.0f}</h2>", unsafe_allow_html=True)
