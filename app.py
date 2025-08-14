@@ -77,6 +77,11 @@ st.markdown("""
         font-size: 1.2em !important;
         color: #AAAAAA;
     }
+    .tech-detail {
+        font-size: 1em !important;
+        color: #DDDDDD;
+        margin-top: -10px;
+    }
     .footnote {
         font-size: 0.8em !important;
         color: #777777;
@@ -132,6 +137,10 @@ total_cost = compute_cost + storage_cost + egress_cost
 with col2:
     st.markdown(f"<div class='big-metric'>{currency} {total_cost:,.0f}</div>", unsafe_allow_html=True)
     st.markdown("<div class='sub-metric'>Per Month on Cloud*</div>", unsafe_allow_html=True)
+
+    # Technical breakdown
+    st.markdown(f"<div class='tech-detail'><b>GPU Type:</b> {gpu_type} &nbsp; | &nbsp; <b>Number of GPUs:</b> {gpu_count}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='tech-detail'><b>Storage:</b> {gpu_count * storage_gb_per_gpu} GB/month &nbsp; | &nbsp; <b>Egress:</b> {gpu_count * egress_gb_per_gpu} GB/month</div>", unsafe_allow_html=True)
 
     # Chart
     chart_data = []
