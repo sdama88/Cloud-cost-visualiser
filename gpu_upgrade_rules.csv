@@ -1,6 +1,6 @@
-current_gpu,user_threshold,new_gpu
-H100,500,B200
-L40S,100,H100
-A100,300,H100
-H200,800,B200
-B200,0,
+current_gpu,upgrade_gpu,min_users
+H100,B200,30
+A100,H200,200
+L40S,H200,500
+H200,B200,800
+B200,B200,0
