@@ -46,7 +46,7 @@ st.set_page_config(page_title="AI Cloud Cost Visualizer", layout="wide")
 st.markdown(
     """
     <a href="https://redsand.ai" target="_blank">
-        <img src="Logo.png" width="200">
+        <img src="redsand-logo.png" width="200">
     </a>
     """,
     unsafe_allow_html=True
