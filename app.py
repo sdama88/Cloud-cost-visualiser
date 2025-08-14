@@ -117,42 +117,37 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# STEP 5: CALCULATE COSTS
-gpu_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "gpu_hourly_usd"].values[0]
-storage_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "storage_price_per_gb_month"].values[0]
-egress_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "egress_price_per_gb"].values[0]
-
-storage_gb_per_gpu = workload_row["storage_gb_per_gpu_base"] + (num_users * workload_row["storage_gb_per_user"])
-egress_gb_per_gpu = workload_row["egress_gb_per_gpu_base"] + (num_users * workload_row["egress_gb_per_user"])
-
-storage_gb = num_gpus * storage_gb_per_gpu
-egress_gb = num_gpus * egress_gb_per_gpu
-
-gpu_monthly_cost = gpu_price * 24 * 30 * num_gpus
-storage_monthly_cost = storage_price * storage_gb
-egress_monthly_cost = egress_price * egress_gb
-
-total_monthly_cost = gpu_monthly_cost + storage_monthly_cost + egress_monthly_cost
-
 # -------------------
-# DISPLAY COSTS
+# STEP 5: COST CALCULATION & DISPLAY
 # -------------------
-st.markdown(f"<h2 style='color:{REDSAND_RED};'>💰 Total Monthly Cost: ${total_monthly_cost:,.0f}</h2>", unsafe_allow_html=True)
+if gpu_type and num_gpus > 0:
+    gpu_row = pricing_df[pricing_df["gpu_type"] == gpu_type]
+    if not gpu_row.empty:
+        gpu_price = gpu_row["gpu_hourly_usd"].values[0]
+        storage_price = gpu_row["storage_price_per_gb_month"].values[0]
+        egress_price = gpu_row["egress_price_per_gb"].values[0]
 
-# Cost breakdown chart
-fig = go.Figure()
-fig.add_trace(go.Bar(name="GPU Cost", x=["Total Cost"], y=[gpu_monthly_cost], marker_color=REDSAND_RED))
-fig.add_trace(go.Bar(name="Storage Cost", x=["Total Cost"], y=[storage_monthly_cost], marker_color="#666666"))
-fig.add_trace(go.Bar(name="Egress Cost", x=["Total Cost"], y=[egress_monthly_cost], marker_color="#999999"))
-fig.update_layout(
-    barmode='stack',
-    title="Cost Breakdown",
-    plot_bgcolor=REDSAND_GREY,
-    paper_bgcolor=REDSAND_GREY,
-    font=dict(color=REDSAND_DARK)
-)
-st.plotly_chart(fig, use_container_width=True)
+        storage_gb_per_gpu = workload_row["storage_gb_per_gpu_base"] + (num_users * workload_row["storage_gb_per_user"])
+        egress_gb_per_gpu = workload_row["egress_gb_per_gpu_base"] + (num_users * workload_row["egress_gb_per_user"])
 
+        storage_gb = num_gpus * storage_gb_per_gpu
+        egress_gb = num_gpus * egress_gb_per_gpu
+
+        gpu_monthly_cost = gpu_price * 24 * 30 * num_gpus
+        storage_monthly_cost = storage_price * storage_gb
+        egress_monthly_cost = egress_price * egress_gb
+        total_monthly_cost = gpu_monthly_cost + storage_monthly_cost + egress_monthly_cost
+
+        # Display total
+        st.markdown(f"<h2 style='color:{REDSAND_RED};'>💰 Total Monthly Cost: ${total_monthly_cost:,.0f}</h2>", unsafe_allow_html=True)
+
+        # Cost breakdown chart
+        fig = go.Figure()
+        fig.add_trace(go.Bar(name="GPU Cost", x=["Total Cost"], y=[gpu_monthly_cost], marker_color=REDSAND_RED))
+        fig.add_trace(go.Bar(name="Storage Cost", x=["Total Cost"], y=[storage_monthly_cost], marker_color="#666666"))
+        fig.add_trace(go.Bar(name="Egress Cost", x=["Total Cost"], y=[egress_monthly_cost], marker_color="#999999"))
+        fig.update_layout(barmode='stack', title="Cost Breakdown", plot_bgcolor=REDSAND_GREY, paper_bgcolor=REDSAND_GREY, font=dict(color=REDSAND_DARK))
+        st.plotly_chart(fig, use_container_width=True)
 # -------------------
 # FOOTNOTES
 # -------------------
