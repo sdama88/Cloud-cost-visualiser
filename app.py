@@ -81,22 +81,28 @@ st.subheader("GPU Selection")
 # Auto calculate required GPUs
 users_per_gpu = workload_row["users_per_gpu"]
 auto_gpus_needed = max(1, int((num_users / users_per_gpu)))
-
 default_gpu_type = workload_row["gpu_type"]
 
 manual_mode = st.checkbox("Manual GPU selection", value=False)
 
 if manual_mode:
+    gpu_list = pricing_df["gpu_type"].unique()
+    if default_gpu_type in gpu_list:
+        default_index = int(pricing_df[pricing_df["gpu_type"] == default_gpu_type].index[0])
+    else:
+        default_index = 0  # fallback if not found
+
     gpu_type = st.selectbox(
         "GPU Type",
-        pricing_df["gpu_type"].unique(),
-        index=pricing_df[pricing_df["gpu_type"] == default_gpu_type].index[0]
-        if default_gpu_type in pricing_df["gpu_type"].values else 0,
+        gpu_list,
+        index=default_index,
         key="manual_gpu_type"
     )
     num_gpus = st.number_input("Number of GPUs", min_value=1, value=auto_gpus_needed, key="manual_gpu_count")
+
     if num_gpus < auto_gpus_needed:
         st.warning(f"⚠️ Selected GPUs may be underpowered. Recommended: {auto_gpus_needed} GPUs")
+
     selection_source = "Manual"
 else:
     gpu_type = default_gpu_type
