@@ -1,0 +1,4 @@
+gpu_type,gpu_hourly_usd,storage_price_per_gb_month,egress_price_per_gb
+L40S,2.5,0.08,0.09
+H100,8,0.08,0.09
+A100,6,0.08,0.09
