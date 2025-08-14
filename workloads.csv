@@ -1,6 +1,9 @@
 workload_name,gpu_type,users_per_gpu,storage_gb_per_gpu_base,storage_gb_per_user,egress_gb_per_gpu_base,egress_gb_per_user
-voice_bot,H100,3.75,50,1,100,2
-image_generation,A100,5,100,2,200,3
-nlp_processing,L40S,10,20,0.5,50,1
-video_transcoding,H200,6,150,3,300,5
-scientific_simulation,B200,8,200,5,400,8
+Voice Bot,H100,3,50,1,200,5
+Chat Bot,L40S,50,20,0.2,50,0.5
+Image Generation,H200,5,80,2,300,10
+Embedding Search,L40S,200,10,0.1,20,0.2
+Fraud Detection (Bank),L40S,30,40,0.5,100,1
+Credit Risk Scoring,L40S,40,30,0.3,80,0.8
+Financial Report Summarisation,L40S,60,25,0.2,50,0.5
+AML Transaction Monitoring,H100,20,60,0.4,150,1.5
