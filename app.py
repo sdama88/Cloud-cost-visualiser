@@ -4,19 +4,20 @@ from google.oauth2.service_account import Credentials
 import pandas as pd
 import math
 import altair as alt
+from PIL import Image
+import base64
+from io import BytesIO
 
 # -------------------
 # Google Sheets connection
 # -------------------
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
-# Authenticate with service account credentials from Streamlit secrets
 creds = Credentials.from_service_account_info(
     st.secrets["gcp_service_account"], scopes=SCOPE
 )
 client = gspread.authorize(creds)
 
-# Use your working Sheet ID
 SHEET_ID = "1fz_jPB2GkHgbAhlZmHOr4g0MVQW3Wyw_jg_nLmmkHIk"
 spreadsheet = client.open_by_key(SHEET_ID)
 
@@ -42,17 +43,22 @@ currency = config_df.loc[config_df["setting_name"] == "currency", "value"].value
 # -------------------
 st.set_page_config(page_title="AI Cloud Cost Visualizer", layout="wide")
 
-# Clickable Redsand logo linking to website
+# Clickable logo (embedded base64 so it always loads)
+logo = Image.open("logo.png")
+buffered = BytesIO()
+logo.save(buffered, format="PNG")
+img_str = base64.b64encode(buffered.getvalue()).decode()
+
 st.markdown(
-    """
+    f"""
     <a href="https://redsand.ai" target="_blank">
-        <img src="redsand-logo.png">
+        <img src="data:image/png;base64,{img_str}" width="200">
     </a>
     """,
     unsafe_allow_html=True
 )
 
-# Apply dark theme styling
+# Dark theme styling
 st.markdown("""
     <style>
     body {
@@ -62,8 +68,7 @@ st.markdown("""
     .big-metric {
         font-size: 3em !important;
         font-weight: bold;
-        color: #FF4B4B; /* Redsand red */
-        text-decoration: none;
+        color: #FF4B4B;
     }
     .sub-metric {
         font-size: 1.5em !important;
@@ -123,21 +128,20 @@ egress_cost = gpu_count * egress_gb_per_gpu * egress_price_per_gb
 total_cost = compute_cost + storage_cost + egress_cost
 
 # -------------------
-# Display results (clickable cost figure)
+# Display results
 # -------------------
 st.markdown(
     f"<a href='https://redsand.ai' target='_blank'><div class='big-metric'>{currency} {total_cost:,.0f}</div></a>",
     unsafe_allow_html=True
 )
 st.markdown(f"<div class='sub-metric'>Estimated Monthly Cloud Cost*</div>", unsafe_allow_html=True)
-
 st.markdown(f"**Estimated GPUs Needed:** {gpu_count}")
 
 # -------------------
 # Chart: Cost vs Concurrency
 # -------------------
 chart_data = []
-for users in range(1, max_users + 1, max(1, max_users // 50)):  # ~50 points
+for users in range(1, max_users + 1, max(1, max_users // 50)):
     gpus_needed = max(base_gpus, math.ceil(users / users_per_gpu))
     c_cost = gpus_needed * gpu_hourly_rate * hours_per_month
     s_cost = gpus_needed * storage_gb_per_gpu * storage_price_per_gb
