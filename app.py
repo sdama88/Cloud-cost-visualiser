@@ -85,11 +85,10 @@ st.markdown("""
         margin-top: -5px;
     }
     .card {
-        background-color: #1a1a1a;
-        padding: 20px;
-        border-radius: 10px;
-        margin-bottom: 20px;
-    }
+    border-bottom: 1px solid #444444;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
     .footnote {
         font-size: 0.8em !important;
         color: #777777;
