@@ -68,16 +68,19 @@ st.subheader("Number of Users")
 user_range = list(range(10, 110, 10)) + list(range(200, 10001, 100))
 num_users = st.select_slider("Select number of users", options=user_range)
 
+# -------------------
 # STEP 3: AUTO GPU SELECTION
+# -------------------
 workload_row = workloads_df[workloads_df["workload_name"] == workload_name].iloc[0]
 default_gpu_type = workload_row["gpu_type"]
-users_per_gpu = workload_row["users_per_gpu"]
 
+users_per_gpu = workload_row["users_per_gpu"]
 auto_gpus_needed = max(1, int((num_users / users_per_gpu)))
 
 # -------------------
-# STEP 4: GPU SELECTION
+# STEP 4: MANUAL OVERRIDE
 # -------------------
+manual_mode = st.checkbox("Manual GPU selection", value=False)
 gpu_type_resolved = False
 
 if manual_mode:
@@ -135,7 +138,13 @@ if gpu_type_resolved and gpu_type and num_gpus > 0:
         fig.add_trace(go.Bar(name="GPU Cost", x=["Total Cost"], y=[gpu_monthly_cost], marker_color=REDSAND_RED))
         fig.add_trace(go.Bar(name="Storage Cost", x=["Total Cost"], y=[storage_monthly_cost], marker_color="#666666"))
         fig.add_trace(go.Bar(name="Egress Cost", x=["Total Cost"], y=[egress_monthly_cost], marker_color="#999999"))
-        fig.update_layout(barmode='stack', title="Cost Breakdown", plot_bgcolor=REDSAND_GREY, paper_bgcolor=REDSAND_GREY, font=dict(color=REDSAND_DARK))
+        fig.update_layout(
+            barmode='stack',
+            title="Cost Breakdown",
+            plot_bgcolor=REDSAND_GREY,
+            paper_bgcolor=REDSAND_GREY,
+            font=dict(color=REDSAND_DARK)
+        )
         st.plotly_chart(fig, use_container_width=True)
 # -------------------
 # FOOTNOTES
