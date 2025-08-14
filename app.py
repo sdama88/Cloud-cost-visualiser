@@ -1,89 +1,147 @@
 import streamlit as st
 import pandas as pd
-import math
 import gspread
-from google.oauth2.service_account import Credentials
-from PIL import Image
+from oauth2client.service_account import ServiceAccountCredentials
 from io import BytesIO
+from PIL import Image
 import base64
+import matplotlib.pyplot as plt
+import math
 
-# Streamlit page setup
-st.set_page_config(page_title="Cloud Cost Visualiser", layout="wide")
+# ---------------------
+# CONFIG
+# ---------------------
+SHEET_ID = "1fz_jPB2GkHgbAhlZmHOr4g0MVQW3Wyw_jg_nLmmkHIk"  # Replace with your Google Sheet ID
+WORKLOADS_SHEET = "workloads"
+PRICING_SHEET = "pricing"
 
-# Load logo as Base64 and make it clickable
-logo = Image.open("logo.png")
-buff = BytesIO()
-logo.save(buff, format="PNG")
-img_str = base64.b64encode(buff.getvalue()).decode()
-st.markdown(f'''
-<a href="https://redsand.ai" target="_blank">
-  <img src="data:image/png;base64,{img_str}" width="80">
-</a>
-''', unsafe_allow_html=True)
-st.markdown("<h1>Cloud Cost Visualiser</h1>", unsafe_allow_html=True)
+SCOPE = ["https://spreadsheets.google.com/feeds",
+         "https://www.googleapis.com/auth/drive"]
 
-# Google Sheets setup
-SHEET_ID = "1fz_jPB2GkHgbAhlZmHOr4g0MVQW3Wyw_jg_nLmmkHIk"
-creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"],
-                                              scopes=["https://spreadsheets.google.com/feeds",
-                                                      "https://www.googleapis.com/auth/drive"])
+# Connect to Google Sheets
+creds = ServiceAccountCredentials.from_json_keyfile_dict(
+    st.secrets["gcp_service_account"], SCOPE
+)
 client = gspread.authorize(creds)
 
-def load_sheet(name):
-    ws = client.open_by_key(SHEET_ID).worksheet(name)
-    df = pd.DataFrame(ws.get_all_records())
-    df.columns = df.columns.str.strip().str.replace('"', '').str.replace('\n', '')
-    return df
+def load_sheet(sheet_name):
+    ws = client.open_by_key(SHEET_ID).worksheet(sheet_name)
+    data = ws.get_all_records()
+    return pd.DataFrame(data)
 
-workloads_df = load_sheet("workloads")
-pricing_df = load_sheet("pricing")
+# Load Data
+workloads_df = load_sheet(WORKLOADS_SHEET)
+pricing_df = load_sheet(PRICING_SHEET)
 
-def safe_get(row, col, default=0):
-    return row[col] if col in row.index else default
+# ---------------------
+# LOGO
+# ---------------------
+logo = Image.open("logo.png")
+buffered = BytesIO()
+logo.save(buffered, format="PNG")
+img_str = base64.b64encode(buffered.getvalue()).decode()
+st.markdown(
+    f"""
+    <a href="https://redsand.ai" target="_blank">
+        <img src="data:image/png;base64,{img_str}" width="120">
+    </a>
+    """,
+    unsafe_allow_html=True,
+)
 
-# Workload selection
-workload_name = st.selectbox("Select workload and GPU combo:", workloads_df["workload_name"] + " — " + workloads_df["gpu_type"])
-idx = workloads_df.index[workloads_df["workload_name"] + " — " + workloads_df["gpu_type"] == workload_name][0]
-wl = workloads_df.loc[idx]
+st.title("☁️ Cloud GPU Cost Visualiser")
 
-gpu_mode = st.radio("GPU Selection Mode", ("Auto", "Manual"), horizontal=True)
-if gpu_mode == "Auto":
-    gpu_type = wl["gpu_type"]
+# ---------------------
+# Step 1 - Select workload & users
+# ---------------------
+workload_name = st.selectbox("Select Workload", sorted(workloads_df["workload_name"].unique()))
+num_users = st.slider(
+    "Number of Users", 
+    min_value=10, 
+    max_value=10000, 
+    step=10, 
+    value=100
+)
+
+# Filter workloads for this selection
+possible_configs = workloads_df[workloads_df["workload_name"] == workload_name]
+
+# Auto-select GPU config based on highest efficiency (users_per_gpu)
+best_config = possible_configs.loc[possible_configs["users_per_gpu"].idxmax()]
+
+# Calculate required GPUs
+required_gpus_auto = math.ceil(num_users / best_config["users_per_gpu"])
+
+# ---------------------
+# Step 2 - Manual override
+# ---------------------
+st.subheader("GPU Configuration")
+manual_mode = st.checkbox("Manually select GPU type and number of GPUs", value=False)
+
+if manual_mode:
+    gpu_type = st.selectbox("GPU Type", sorted(workloads_df["gpu_type"].unique()))
+    num_gpus = st.number_input("Number of GPUs", min_value=1, value=required_gpus_auto)
+    chosen_config = possible_configs[possible_configs["gpu_type"] == gpu_type].iloc[0]
+    if num_users > chosen_config["users_per_gpu"] * num_gpus:
+        st.warning("⚠️ This configuration may be underpowered for the selected number of users.")
 else:
-    gpu_type = st.selectbox("Select GPU Type:", pricing_df["gpu_type"])
+    gpu_type = best_config["gpu_type"]
+    num_gpus = required_gpus_auto
 
-# Workload parameters
-base_gpus = int(wl["base_gpus"])
-users_per_gpu = int(wl["users_per_gpu"])
-storage_gb_per_gpu = int(wl["storage_gb_per_gpu"])
-egress_base = safe_get(wl, "egress_gb_per_gpu_base", 0)
-egress_per_user = safe_get(wl, "egress_gb_per_user", 0)
-num_users = st.slider("Number of Concurrent Users", 1, 10000, 500, step=50)
+# ---------------------
+# Step 3 - Load & egress calculation
+# ---------------------
+workload_row = possible_configs[possible_configs["gpu_type"] == gpu_type].iloc[0]
 
-# Pricing
-pr = pricing_df[pricing_df["gpu_type"] == gpu_type].iloc[0]
-gpu_hr = pr["gpu_hourly_usd"]
-store_pr = pr["storage_price_per_gb_month"]
-egress_pr = pr["egress_price_per_gb"]
+# Storage
+total_storage_gb = (
+    workload_row["storage_gb_per_gpu_base"] * num_gpus +
+    workload_row["storage_gb_per_user"] * num_users
+)
 
-# Compute costs
-req_gpus = max(base_gpus, math.ceil(num_users / users_per_gpu))
-gpu_cost = req_gpus * gpu_hr * 24 * 30
-store_cost = req_gpus * storage_gb_per_gpu * store_pr
-egress_cost = (req_gpus * egress_base + num_users * egress_per_user) * egress_pr
-total = gpu_cost + store_cost + egress_cost
+# Egress
+total_egress_gb = (
+    workload_row["egress_gb_per_gpu_base"] * num_gpus +
+    workload_row["egress_gb_per_user"] * num_users
+)
 
-# Display result
-st.markdown(f"### Estimated Monthly Cost: **${total:,.2f}** (GPUs: {req_gpus}, Type: {gpu_type})")
+# ---------------------
+# Step 4 - Pricing
+# ---------------------
+price_row = pricing_df[pricing_df["gpu_type"] == gpu_type].iloc[0]
 
-# Graph of cost vs users
-usr = list(range(1, 10001, 500))
-costs = []
-for u in usr:
-    g = max(base_gpus, math.ceil(u / users_per_gpu))
-    c = (g * gpu_hr * 24 * 30) + (g * storage_gb_per_gpu * store_pr) + ((g * egress_base + u * egress_per_user) * egress_pr)
-    costs.append(c)
-dfc = pd.DataFrame({"Users": usr, "Total Cost": costs}).set_index("Users")
-st.area_chart(dfc)
+gpu_hourly = price_row["gpu_hourly_usd"]
+storage_price = price_row["storage_price_per_gb_month"]
+egress_price = price_row["egress_price_per_gb"]
 
-st.markdown("*Estimates only. Real costs depend on region, discounts, and provider nuances.*")
+gpu_monthly_cost = gpu_hourly * 24 * 30 * num_gpus
+storage_monthly_cost = total_storage_gb * storage_price
+egress_monthly_cost = total_egress_gb * egress_price
+
+total_monthly_cost = gpu_monthly_cost + storage_monthly_cost + egress_monthly_cost
+
+# ---------------------
+# Step 5 - Display results
+# ---------------------
+st.subheader("📊 Cost Summary")
+st.write(f"**GPU Type:** {gpu_type}")
+st.write(f"**Number of GPUs:** {num_gpus}")
+st.write(f"**Total Storage:** {total_storage_gb:,.0f} GB")
+st.write(f"**Total Egress:** {total_egress_gb:,.0f} GB/month")
+st.write(f"**Total Monthly Cost:** ${total_monthly_cost:,.2f}")
+
+# Chart
+fig, ax = plt.subplots()
+ax.bar(["GPU Cost", "Storage Cost", "Egress Cost"], 
+       [gpu_monthly_cost, storage_monthly_cost, egress_monthly_cost],
+       color=["#FF4B4B", "#4BB3FF", "#FFD34B"])
+ax.set_ylabel("USD")
+ax.set_title("Monthly Cost Breakdown")
+st.pyplot(fig)
+
+# ---------------------
+# Footnote
+# ---------------------
+st.markdown("""
+<small>* Pricing is aggregated and indicative only. Actual cloud provider pricing may vary based on contracts, reserved instances, and regional rates. *</small>
+""", unsafe_allow_html=True)
