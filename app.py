@@ -102,12 +102,14 @@ st.write(f"**GPU Type:** {gpu_type} | **GPUs Used:** {gpu_count}")
 # ======= STREAMLIT NATIVE GRAPH =======
 user_range = list(range(1, max_users + 1))
 costs = []
+
 for u in user_range:
     g_count = max(base_gpus, math.ceil(u / users_per_gpu))
     comp = g_count * gpu_hourly * hours_per_month
     store = g_count * storage_gb_per_gpu * storage_price_per_gb
     egress = (g_count * egress_gb_per_gpu_base + (egress_gb_per_user * u)) * egress_price_per_gb
-    costs.append(comp + store + egress)
+    total = comp + store + egress
+    costs.append(total)
 
 st.line_chart(pd.DataFrame({
     f"Monthly Cost ({currency})": costs
