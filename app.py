@@ -28,10 +28,19 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service
 client = gspread.authorize(creds)
 
 def load_sheet(sheet_name):
-    ws = client.open_by_key(SHEET_ID).worksheet(sheet_name)
-    data = ws.get_all_records()
-    return pd.DataFrame(data)
+    spreadsheet = client.open_by_key(SHEET_ID)
+    available_sheets = [ws.title.strip() for ws in spreadsheet.worksheets()]
+    st.write("Available sheets:", available_sheets)
+
+    # Normalize sheet name for matching
+    sheet_name_clean = sheet_name.strip()
+    if sheet_name_clean not in available_sheets:
+        raise ValueError(f"Worksheet '{sheet_name}' not found. Available: {available_sheets}")
+
+    ws = spreadsheet.worksheet(sheet_name_clean)
+    df = pd.DataFrame(ws.get_all_records())
     df.columns = df.columns.str.strip().str.replace('"', '').str.replace("'", "")
+    return df
 
 workloads_df = load_sheet(WORKLOADS_SHEET)
 pricing_df = load_sheet(PRICING_SHEET)
