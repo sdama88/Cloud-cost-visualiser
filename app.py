@@ -3,7 +3,6 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import math
-import matplotlib.pyplot as plt
 from PIL import Image
 from io import BytesIO
 import base64
@@ -100,8 +99,8 @@ colC.metric("Egress Cost", f"{currency} {egress_cost:,.0f}")
 
 st.write(f"**GPU Type:** {gpu_type} | **GPUs Used:** {gpu_count}")
 
-# ======= GRAPH =======
-user_range = list(range(1, max_users + 1, max(1, max_users // 20)))
+# ======= STREAMLIT NATIVE GRAPH =======
+user_range = list(range(1, max_users + 1))
 costs = []
 for u in user_range:
     g_count = max(base_gpus, math.ceil(u / users_per_gpu))
@@ -110,12 +109,9 @@ for u in user_range:
     egress = (g_count * egress_gb_per_gpu_base + (egress_gb_per_user * u)) * egress_price_per_gb
     costs.append(comp + store + egress)
 
-fig, ax = plt.subplots()
-ax.plot(user_range, costs, marker="o", color="red")
-ax.set_xlabel("Number of Concurrent Users")
-ax.set_ylabel(f"Monthly Cost ({currency})")
-ax.set_title(f"Cost Scaling for {selected_workload}")
-st.pyplot(fig)
+st.line_chart(pd.DataFrame({
+    f"Monthly Cost ({currency})": costs
+}, index=user_range))
 
 # ======= FOOTNOTE =======
 st.markdown("<hr>", unsafe_allow_html=True)
