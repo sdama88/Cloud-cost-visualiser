@@ -104,7 +104,10 @@ user_range = list(range(1, max_users + 1))
 costs = []
 
 for u in user_range:
-    g_count = max(base_gpus, math.ceil(u / users_per_gpu))
+    # Continuous GPU scaling instead of step jumps
+    g_count = base_gpus * (u / (users_per_gpu * base_gpus))
+    g_count = max(base_gpus, g_count)
+
     comp = g_count * gpu_hourly * hours_per_month
     store = g_count * storage_gb_per_gpu * storage_price_per_gb
     egress = (g_count * egress_gb_per_gpu_base + (egress_gb_per_user * u)) * egress_price_per_gb
