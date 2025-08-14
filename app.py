@@ -69,7 +69,7 @@ gpu_type = default_gpu_type
 upgrade_row = upgrade_rules_df[(upgrade_rules_df["current_gpu"] == gpu_type) &
                                 (num_users >= upgrade_rules_df["user_threshold"])]
 if not upgrade_row.empty:
-    gpu_type = upgrade_row.iloc[0]["new_gpu"]
+    gpu_type = upgrade_row.iloc[0]["upgrade_gpu"]
 
 # -------------------
 # COST CALCULATIONS
@@ -122,12 +122,12 @@ for u in user_values:
     elif gpus_needed <= 16:
         gpus_needed = 16
 
-    # Silent upgrade for each point
-    gpu_sel = default_gpu_type
-    upgrade_check = upgrade_rules_df[(upgrade_rules_df["current_gpu"] == gpu_sel) &
-                                     (u >= upgrade_rules_df["user_threshold"])]
-    if not upgrade_check.empty:
-        gpu_sel = upgrade_check.iloc[0]["new_gpu"]
+   # Silent upgrade for each point
+gpu_sel = default_gpu_type
+upgrade_check = upgrade_rules_df[(upgrade_rules_df["current_gpu"] == gpu_sel) &
+                                 (u >= upgrade_rules_df["user_threshold"])]
+if not upgrade_check.empty:
+    gpu_sel = upgrade_check.iloc[0]["upgrade_gpu"]
 
     g_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_sel, "gpu_hourly_usd"].values[0]
     s_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_sel, "storage_price_per_gb_month"].values[0]
