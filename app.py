@@ -10,7 +10,7 @@ from io import BytesIO
 # -------------------
 # CONFIG
 # -------------------
-SHEET_ID = "1fz_jPB2GkHgbAhlZmHOr4g0MVQW3Wyw_jg_nLmmkHIk"
+SHEET_ID = "YOUR_SHEET_ID"  # Replace with new sheet ID
 WORKLOADS_SHEET = "workloads"
 PRICING_SHEET = "pricing"
 GPU_CONFIGS_SHEET = "gpu_configs"
@@ -28,15 +28,12 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service
 client = gspread.authorize(creds)
 
 def load_sheet(sheet_name):
-    spreadsheet = client.open_by_key(SHEET_ID)
-    available_sheets = [ws.title.strip() for ws in spreadsheet.worksheets()]
-    if sheet_name not in available_sheets:
-        raise ValueError(f"Worksheet '{sheet_name}' not found. Available: {available_sheets}")
-    ws = spreadsheet.worksheet(sheet_name)
+    ws = client.open_by_key(SHEET_ID).worksheet(sheet_name)
     df = pd.DataFrame(ws.get_all_records())
-    df.columns = df.columns.str.strip().str.replace('"', '').str.replace("'", "")
+    df.columns = df.columns.str.strip()
     return df
 
+# Load all data
 workloads_df = load_sheet(WORKLOADS_SHEET)
 pricing_df = load_sheet(PRICING_SHEET)
 gpu_configs_df = load_sheet(GPU_CONFIGS_SHEET)
@@ -74,45 +71,36 @@ st.subheader("Number of Users")
 user_range = list(range(10, 110, 10)) + list(range(200, 10001, 100))
 num_users = st.select_slider("Select number of users", options=user_range)
 
-# Get workload row
+# STEP 3: Auto GPU config
 workload_row = workloads_df[workloads_df["workload_name"] == workload_name].iloc[0]
-
-# STEP 3: AUTO GPU SELECTION
+default_gpu_type = workload_row["gpu_type"]
 users_per_gpu = workload_row["users_per_gpu"]
+base_gpus = workload_row["base_gpus"]
 
-# Find smallest GPU config that can handle the load
-required_gpus_by_type = {}
-for _, row in gpu_configs_df.iterrows():
-    gpu_type = row["gpu_type"]
-    max_users_per_gpu = row["max_users_per_gpu"]
-    gpus_needed = max(1, int(num_users / max_users_per_gpu))
-    required_gpus_by_type[gpu_type] = gpus_needed
+auto_gpus_needed = max(1, int((num_users / users_per_gpu) * base_gpus))
 
-# Default GPU: cheapest option that can handle the load
-valid_gpus = [(gpu, gpus) for gpu, gpus in required_gpus_by_type.items() if gpus > 0]
-default_gpu_type, auto_gpus_needed = sorted(
-    valid_gpus, key=lambda x: pricing_df.loc[pricing_df["gpu_type"] == x[0], "gpu_hourly_usd"].values[0]
-)[0]
-
-# STEP 4: MANUAL OVERRIDE
+# STEP 4: Manual override
 manual_mode = st.checkbox("Manual GPU selection", value=False)
 
 if manual_mode:
     gpu_type = st.selectbox("GPU Type", pricing_df["gpu_type"].unique(), index=pricing_df[pricing_df["gpu_type"] == default_gpu_type].index[0])
     num_gpus = st.number_input("Number of GPUs", min_value=1, value=auto_gpus_needed)
-    if num_gpus < required_gpus_by_type[gpu_type]:
-        st.warning(f"⚠️ Selected GPUs may be underpowered. Recommended: {required_gpus_by_type[gpu_type]} GPUs")
+    if num_gpus < auto_gpus_needed:
+        st.warning(f"⚠️ Selected GPUs may be underpowered. Recommended: {auto_gpus_needed}")
 else:
     gpu_type = default_gpu_type
     num_gpus = auto_gpus_needed
 
-# STEP 5: CALCULATE COSTS
+# STEP 5: Cost calculation
 gpu_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "gpu_hourly_usd"].values[0]
 storage_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "storage_price_per_gb_month"].values[0]
 egress_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "egress_price_per_gb"].values[0]
 
-storage_gb = (workload_row["storage_gb_per_gpu_base"] + (num_users * workload_row["storage_gb_per_user"])) * num_gpus
-egress_gb = (workload_row["egress_gb_per_gpu_base"] + (num_users * workload_row["egress_gb_per_user"])) * num_gpus
+storage_gb_per_gpu = workload_row["storage_gb_per_gpu"]
+egress_gb_per_gpu = workload_row["egress_gb_per_gpu"]
+
+storage_gb = num_gpus * storage_gb_per_gpu
+egress_gb = num_gpus * egress_gb_per_gpu
 
 gpu_monthly_cost = gpu_price * 24 * 30 * num_gpus
 storage_monthly_cost = storage_price * storage_gb
@@ -123,9 +111,8 @@ total_monthly_cost = gpu_monthly_cost + storage_monthly_cost + egress_monthly_co
 # -------------------
 # DISPLAY COSTS
 # -------------------
-st.markdown(f"<h2 style='color:{REDSAND_RED}; font-size: 40px;'>💰 Total Monthly Cost: ${total_monthly_cost:,.0f}</h2>", unsafe_allow_html=True)
+st.markdown(f"<h2 style='color:{REDSAND_RED};'>💰 Total Monthly Cost: ${total_monthly_cost:,.0f}</h2>", unsafe_allow_html=True)
 
-# Cost breakdown chart
 fig = go.Figure()
 fig.add_trace(go.Bar(name="GPU Cost", x=["Total Cost"], y=[gpu_monthly_cost], marker_color=REDSAND_RED))
 fig.add_trace(go.Bar(name="Storage Cost", x=["Total Cost"], y=[storage_monthly_cost], marker_color="#666666"))
