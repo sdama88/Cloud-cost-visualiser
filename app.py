@@ -31,6 +31,7 @@ def load_sheet(sheet_name):
     ws = client.open_by_key(SHEET_ID).worksheet(sheet_name)
     data = ws.get_all_records()
     return pd.DataFrame(data)
+    df.columns = df.columns.str.strip().str.replace('"', '').str.replace("'", "")
 
 workloads_df = load_sheet(WORKLOADS_SHEET)
 pricing_df = load_sheet(PRICING_SHEET)
