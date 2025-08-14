@@ -75,21 +75,41 @@ users_per_gpu = workload_row["users_per_gpu"]
 
 auto_gpus_needed = max(1, int((num_users / users_per_gpu)))
 
-# STEP 4: MANUAL OVERRIDE
+# STEP 4: GPU SELECTION (Auto + Manual)
+st.subheader("GPU Selection")
+
+# Auto calculate required GPUs
+users_per_gpu = workload_row["users_per_gpu"]
+auto_gpus_needed = max(1, int((num_users / users_per_gpu)))
+
+default_gpu_type = workload_row["gpu_type"]
+
 manual_mode = st.checkbox("Manual GPU selection", value=False)
 
 if manual_mode:
     gpu_type = st.selectbox(
         "GPU Type",
         pricing_df["gpu_type"].unique(),
-        index=int(pricing_df[pricing_df["gpu_type"] == default_gpu_type].index[0]) if default_gpu_type in pricing_df["gpu_type"].values else 0
+        index=pricing_df[pricing_df["gpu_type"] == default_gpu_type].index[0]
+        if default_gpu_type in pricing_df["gpu_type"].values else 0,
+        key="manual_gpu_type"
     )
-    num_gpus = st.number_input("Number of GPUs", min_value=1, value=auto_gpus_needed)
+    num_gpus = st.number_input("Number of GPUs", min_value=1, value=auto_gpus_needed, key="manual_gpu_count")
     if num_gpus < auto_gpus_needed:
         st.warning(f"⚠️ Selected GPUs may be underpowered. Recommended: {auto_gpus_needed} GPUs")
+    selection_source = "Manual"
 else:
     gpu_type = default_gpu_type
     num_gpus = auto_gpus_needed
+    selection_source = "Automatic"
+
+# Display selected GPU config
+st.markdown(
+    f"<div style='background-color:#F4F4F4;padding:10px;border-radius:8px;'>"
+    f"<strong>Selected GPU Configuration ({selection_source}):</strong> "
+    f"{num_gpus} × {gpu_type}</div>",
+    unsafe_allow_html=True
+)
 
 # STEP 5: CALCULATE COSTS
 gpu_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "gpu_hourly_usd"].values[0]
