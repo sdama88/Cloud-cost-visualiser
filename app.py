@@ -7,6 +7,7 @@ import altair as alt
 from PIL import Image
 import base64
 from io import BytesIO
+import time
 
 # -------------------
 # Google Sheets connection
@@ -85,10 +86,10 @@ st.markdown("""
         margin-top: -5px;
     }
     .card {
-    border-bottom: 1px solid #444444;
-    padding-bottom: 10px;
-    margin-bottom: 20px;
-}
+        border-bottom: 1px solid #444444;
+        padding-bottom: 10px;
+        margin-bottom: 20px;
+    }
     .footnote {
         font-size: 0.8em !important;
         color: #777777;
@@ -97,7 +98,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h3 style='text-align:center;'>How much would the cloud charge for your AI?</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align:center;'>See Your AI's Cloud Bill Instantly</h3>", unsafe_allow_html=True)
 
 # -------------------
 # Inputs in a card
@@ -120,35 +121,55 @@ with st.container():
     st.markdown('</div>', unsafe_allow_html=True)
 
 # -------------------
-# Calculate cost
+# Get workload and pricing details
 # -------------------
 workload_row = workloads_df[workloads_df["workload_name"] == selected_workload].iloc[0]
 gpu_type = workload_row["gpu_type"]
 base_gpus = workload_row["base_gpus"]
 users_per_gpu = workload_row["users_per_gpu"]
 storage_gb_per_gpu = workload_row["storage_gb_per_gpu"]
-egress_gb_per_gpu = workload_row["egress_gb_per_gpu"]
+egress_gb_per_gpu_base = workload_row["egress_gb_per_gpu_base"]
+egress_gb_per_user = workload_row["egress_gb_per_user"]
 
 pricing_row = pricing_df[pricing_df["gpu_type"] == gpu_type].iloc[0]
 gpu_hourly_rate = pricing_row["blended_hourly_usd"]
 storage_price_per_gb = pricing_row["storage_price_per_gb_month"]
 egress_price_per_gb = pricing_row["egress_price_per_gb"]
 
+# -------------------
+# Calculations
+# -------------------
 gpu_count = max(base_gpus, math.ceil(concurrent_users / users_per_gpu))
+
+# Compute cost
 compute_cost = gpu_count * gpu_hourly_rate * hours_per_month
-storage_cost = gpu_count * storage_gb_per_gpu * storage_price_per_gb
-egress_cost = gpu_count * egress_gb_per_gpu * egress_price_per_gb
+
+# Storage cost
+total_storage_gb = storage_gb_per_gpu * gpu_count
+storage_cost = total_storage_gb * storage_price_per_gb
+
+# Egress cost (dynamic scaling with users)
+total_egress_gb = (egress_gb_per_gpu_base + (egress_gb_per_user * concurrent_users)) * gpu_count
+egress_cost = total_egress_gb * egress_price_per_gb
+
+# Total cost
 total_cost = compute_cost + storage_cost + egress_cost
 
 # -------------------
-# Cost display
+# Cost display with count-up animation
 # -------------------
-st.markdown(f"<div class='big-metric'>{currency} {total_cost:,.0f}</div>", unsafe_allow_html=True)
+placeholder = st.empty()
+for i in range(0, int(total_cost), max(1, int(total_cost // 50))):
+    placeholder.markdown(f"<div class='big-metric'>{currency} {i:,.0f}</div>", unsafe_allow_html=True)
+    time.sleep(0.01)
+placeholder.markdown(f"<div class='big-metric'>{currency} {total_cost:,.0f}</div>", unsafe_allow_html=True)
+
 st.markdown("<div class='sub-metric'>Per Month on Cloud*</div>", unsafe_allow_html=True)
 
 # Technical breakdown
 st.markdown(f"<div class='tech-detail'><b>GPU Type:</b> {gpu_type} &nbsp; | &nbsp; <b>Number of GPUs:</b> {gpu_count}</div>", unsafe_allow_html=True)
-st.markdown(f"<div class='tech-detail'><b>Storage:</b> {gpu_count * storage_gb_per_gpu} GB/month &nbsp; | &nbsp; <b>Egress:</b> {gpu_count * egress_gb_per_gpu} GB/month</div>", unsafe_allow_html=True)
+st.markdown(f"<div class='tech-detail'><b>Storage:</b> {total_storage_gb} GB/month &nbsp; | &nbsp; <b>Egress:</b> {total_egress_gb} GB/month</div>", unsafe_allow_html=True)
+st.markdown(f"<div class='tech-detail'><b>Compute:</b> {currency} {compute_cost:,.0f} &nbsp; | &nbsp; <b>Storage:</b> {currency} {storage_cost:,.0f} &nbsp; | &nbsp; <b>Egress:</b> {currency} {egress_cost:,.0f}</div>", unsafe_allow_html=True)
 
 # -------------------
 # Chart
@@ -158,20 +179,22 @@ for users in range(1, max_users + 1, max(1, max_users // 50)):
     gpus_needed = max(base_gpus, math.ceil(users / users_per_gpu))
     c_cost = gpus_needed * gpu_hourly_rate * hours_per_month
     s_cost = gpus_needed * storage_gb_per_gpu * storage_price_per_gb
-    e_cost = gpus_needed * egress_gb_per_gpu * egress_price_per_gb
+    egress_gb = (egress_gb_per_gpu_base + (egress_gb_per_user * users)) * gpus_needed
+    e_cost = egress_gb * egress_price_per_gb
     total = c_cost + s_cost + e_cost
     chart_data.append({"Concurrent Users": users, "Monthly Cost": total})
 
 chart_df = pd.DataFrame(chart_data)
-line_chart = alt.Chart(chart_df).mark_line(color="#FF0000", strokeWidth=3).encode(
+line_chart = alt.Chart(chart_df).mark_line(color="#FF0000", strokeWidth=4, point=alt.OverlayMarkDef(filled=True, size=50)).encode(
     x=alt.X("Concurrent Users", title="Concurrent Users"),
     y=alt.Y("Monthly Cost", title=f"Monthly Cost ({currency})"),
     tooltip=["Concurrent Users", "Monthly Cost"]
-).properties(width=600, height=200)
+).properties(width=600, height=250)
 
 st.altair_chart(line_chart, use_container_width=True)
 
 # -------------------
-# Footnote
+# CTA and Footnote
 # -------------------
-st.markdown("<div class='footnote'>*Based on average market rates for equivalent compute. For estimation purposes only.</div>", unsafe_allow_html=True)
+st.markdown("<div class='footnote'>*Based on average market rates for equivalent compute, storage, and bandwidth. For estimation purposes only.</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align:center; margin-top:10px;'><a href='https://redsand.ai' style='color:#FF0000; text-decoration:none; font-weight:bold;'>Ask us how to cut this cost</a></div>", unsafe_allow_html=True)
