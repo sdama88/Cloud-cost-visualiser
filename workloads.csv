@@ -1,6 +1,6 @@
 workload_name,gpu_type,users_per_gpu,storage_gb_per_gpu_base,storage_gb_per_user,egress_gb_per_gpu_base,egress_gb_per_user
-Chatbot 13B,L40S,100,500,0,100,0
-Voicebot,H100,50,500,0,200,0
-Image Gen,A100,20,1000,0,300,0
-Multimodal,H100,200,2000,0,500,0
-Video Analysis,H100,50,5000,0,1000,0
+Voice Bot,H100,4,100,2,50,1
+Image Generator,L40S,2,150,5,60,2
+Video Processing,H200,1,200,10,100,5
+Chatbot,B200,10,50,1,20,0.5
+Data Analytics,A100,8,120,3,40,1
