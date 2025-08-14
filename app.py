@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import math
 
 # -------------------
 # CONFIG
@@ -42,7 +43,6 @@ workload_name = st.selectbox("Workload", workloads_df["workload_name"].unique())
 
 # Number of Users
 st.subheader("Number of Concurrent Human Users")
-user_range = list(range(10, 1001, 10))
 num_users = st.slider("Select number of users", min_value=10, max_value=1000, step=10, value=10)
 
 # -------------------
@@ -52,24 +52,32 @@ workload_row = workloads_df[workloads_df["workload_name"] == workload_name].iloc
 default_gpu_type = workload_row["gpu_type"]
 users_per_gpu = workload_row["users_per_gpu"]
 
-auto_gpus_needed = max(1, int((num_users / users_per_gpu)))
-# Round up to hyperscaler-friendly sizes (4, 8, 16, etc.)
+# Calculate GPUs needed with safe rounding
+auto_gpus_needed = max(1, math.ceil(num_users / users_per_gpu))
+
+# Round up only to nearest hyperscaler-friendly sizes (4, 8, 16, etc.)
 if auto_gpus_needed <= 4:
     auto_gpus_needed = 4
 elif auto_gpus_needed <= 8:
     auto_gpus_needed = 8
 elif auto_gpus_needed <= 16:
     auto_gpus_needed = 16
+else:
+    # Round up to nearest multiple of 8 after 16
+    auto_gpus_needed = math.ceil(auto_gpus_needed / 8) * 8
 
 gpu_type = default_gpu_type
 
 # -------------------
 # SILENT GPU UPGRADE
 # -------------------
-upgrade_row = upgrade_rules_df[(upgrade_rules_df["current_gpu"] == gpu_type) &
-                                (num_users >= upgrade_rules_df["user_threshold"])]
+upgrade_row = upgrade_rules_df[
+    (upgrade_rules_df["current_gpu"] == gpu_type) &
+    (num_users >= upgrade_rules_df["user_threshold"])
+]
+
 if not upgrade_row.empty:
-    gpu_type = upgrade_row.iloc[0]["upgrade_gpu"]  # FIXED to match CSV
+    gpu_type = upgrade_row.iloc[0]["new_gpu"]
 
 # -------------------
 # COST CALCULATIONS
@@ -114,20 +122,23 @@ with col2:
 user_values = list(range(10, 1001, 10))
 cost_values = []
 for u in user_values:
-    gpus_needed = max(1, int((u / users_per_gpu)))
+    gpus_needed = max(1, math.ceil(u / users_per_gpu))
     if gpus_needed <= 4:
         gpus_needed = 4
     elif gpus_needed <= 8:
         gpus_needed = 8
     elif gpus_needed <= 16:
         gpus_needed = 16
+    else:
+        gpus_needed = math.ceil(gpus_needed / 8) * 8
 
-    # Silent upgrade for each point
     gpu_sel = default_gpu_type
-    upgrade_check = upgrade_rules_df[(upgrade_rules_df["current_gpu"] == gpu_sel) &
-                                     (u >= upgrade_rules_df["user_threshold"])]
+    upgrade_check = upgrade_rules_df[
+        (upgrade_rules_df["current_gpu"] == gpu_sel) &
+        (u >= upgrade_rules_df["user_threshold"])
+    ]
     if not upgrade_check.empty:
-        gpu_sel = upgrade_check.iloc[0]["upgrade_gpu"]  # FIXED to match CSV
+        gpu_sel = upgrade_check.iloc[0]["new_gpu"]
 
     g_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_sel, "gpu_hourly_usd"].values[0]
     s_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_sel, "storage_price_per_gb_month"].values[0]
