@@ -1,5 +1,5 @@
 workload_name,gpu_type,users_per_gpu,storage_gb_per_gpu_base,storage_gb_per_user,egress_gb_per_gpu_base,egress_gb_per_user
-Voice Bot,H100,3.750000,50,1,100,2
+Voice Bot,H100,"3.75",50,1,100,2
 Chat Bot,L40S,50,20,0.2,50,0.5
 Image Generation,H200,5,80,2,300,10
 Embedding Search,L40S,200,10,0.1,20,0.2
