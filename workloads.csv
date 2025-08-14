@@ -1,6 +1,8 @@
 workload_name,gpu_type,users_per_gpu,storage_gb_per_gpu_base,storage_gb_per_user,egress_gb_per_gpu_base,egress_gb_per_user
-Voice Bot,H100,4,500,2,1000,5
-Image Generation,B200,2,1000,5,2000,10
-Video Processing,H200,1,2000,10,3000,15
-Chatbot,L40S,20,200,1,500,2
-Data Analytics,A100,50,100,0.5,200,1
+Voice Bot,A100,4,50,0.5,100,2
+Image Generation,L40S,8,40,0.3,80,1.5
+Video Processing,H100,4,80,0.8,200,4
+Large Language Model,H100,4,60,0.5,150,3
+3D Rendering,H200,8,100,1.0,250,5
+Scientific Simulation,H200,4,120,0.8,300,4
+Advanced AI Research,B200,4,150,1.2,350,6
