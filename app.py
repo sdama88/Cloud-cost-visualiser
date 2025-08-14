@@ -29,31 +29,21 @@ client = gspread.authorize(creds)
 
 def load_sheet(sheet_name):
     spreadsheet = client.open_by_key(SHEET_ID)
-    ws = spreadsheet.worksheet(sheet_name.strip())
+    available_sheets = [ws.title.strip() for ws in spreadsheet.worksheets()]
+
+    sheet_name_clean = sheet_name.strip()
+    if sheet_name_clean not in available_sheets:
+        raise ValueError(f"Worksheet '{sheet_name}' not found. Available: {available_sheets}")
+
+    ws = spreadsheet.worksheet(sheet_name_clean)
     df = pd.DataFrame(ws.get_all_records())
-    # Normalise headers
-    df.columns = (
-        df.columns
-        .str.strip()
-        .str.lower()
-        .str.replace('"', "")
-        .str.replace("'", "")
-        .str.replace(" ", "_")
-    )
+    df.columns = df.columns.str.strip().str.replace('"', '').str.replace("'", "")
     return df
 
 # Load data
 workloads_df = load_sheet(WORKLOADS_SHEET)
 pricing_df = load_sheet(PRICING_SHEET)
 gpu_configs_df = load_sheet(GPU_CONFIGS_SHEET)
-
-# -------------------
-# SAFE COLUMN ACCESS
-# -------------------
-def get_col(row, name):
-    """Fetch column safely ignoring case/spaces/quotes"""
-    clean_name = name.strip().lower().replace(" ", "_").replace('"', "").replace("'", "")
-    return row[clean_name]
 
 # -------------------
 # UI SETUP
@@ -90,11 +80,11 @@ num_users = st.select_slider("Select number of users", options=user_range)
 
 # STEP 3: AUTO GPU SELECTION
 workload_row = workloads_df[workloads_df["workload_name"] == workload_name].iloc[0]
-default_gpu_type = get_col(workload_row, "gpu_type")
-default_base_gpus = get_col(workload_row, "base_gpus")
-users_per_gpu = get_col(workload_row, "users_per_gpu")
+default_gpu_type = workload_row["gpu_type"]
 
-auto_gpus_needed = max(1, int((num_users / users_per_gpu) * default_base_gpus))
+# Calculate GPUs required without base_gpus
+users_per_gpu = workload_row["users_per_gpu"]
+auto_gpus_needed = max(1, int(num_users / users_per_gpu))
 
 # STEP 4: MANUAL OVERRIDE
 manual_mode = st.checkbox("Manual GPU selection", value=False)
@@ -117,11 +107,9 @@ gpu_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "gpu_hourly_usd"]
 storage_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "storage_price_per_gb_month"].values[0]
 egress_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "egress_price_per_gb"].values[0]
 
-storage_gb_per_gpu = get_col(workload_row, "storage_gb_per_gpu")
-egress_gb_per_gpu = get_col(workload_row, "egress_gb_per_gpu")
-
-storage_gb = num_gpus * storage_gb_per_gpu
-egress_gb = num_gpus * egress_gb_per_gpu
+# Calculate storage and egress based on your sheet columns
+storage_gb = (workload_row["storage_gb_per_gpu_base"] + workload_row["storage_gb_per_user"] * num_users)
+egress_gb = (workload_row["egress_gb_per_gpu_base"] + workload_row["egress_gb_per_user"] * num_users)
 
 gpu_monthly_cost = gpu_price * 24 * 30 * num_gpus
 storage_monthly_cost = storage_price * storage_gb
@@ -132,7 +120,10 @@ total_monthly_cost = gpu_monthly_cost + storage_monthly_cost + egress_monthly_co
 # -------------------
 # DISPLAY COSTS
 # -------------------
-st.markdown(f"<h2 style='color:{REDSAND_RED}; font-size: 2.5em;'>💰 Total Monthly Cost: ${total_monthly_cost:,.0f}</h2>", unsafe_allow_html=True)
+st.markdown(
+    f"<h2 style='color:{REDSAND_RED};'>💰 Total Monthly Cost: ${total_monthly_cost:,.0f}</h2>",
+    unsafe_allow_html=True
+)
 
 # Cost breakdown chart
 fig = go.Figure()
