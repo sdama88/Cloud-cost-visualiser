@@ -18,8 +18,8 @@ client = gspread.authorize(creds)
 # -------------------
 # Load Google Sheet
 # -------------------
-SHEET_NAME = "cloud_cost_visualizer_data"  # Change if your sheet name is different
-spreadsheet = client.open(SHEET_NAME)
+SHEET_ID = "1_12UkneY5K6f9RCdgh0PgscbIA0mhnKN"
+spreadsheet = client.open_by_key(SHEET_ID)
 
 @st.cache_data
 def load_data():
