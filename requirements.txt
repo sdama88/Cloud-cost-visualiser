@@ -1,6 +1,6 @@
 streamlit
-pandas
-altair
 gspread
-google-auth
-openpyxl
+oauth2client
+pandas
+Pillow
+matplotlib
