@@ -1,7 +1,5 @@
 import streamlit as st
 import pandas as pd
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 import plotly.graph_objects as go
 from PIL import Image
 import base64
@@ -10,10 +8,9 @@ from io import BytesIO
 # -------------------
 # CONFIG
 # -------------------
-SHEET_ID = "1fz_jPB2GkHgbAhlZmHOr4g0MVQW3Wyw_jg_nLmmkHIk"
-WORKLOADS_SHEET = "workloads"
-PRICING_SHEET = "pricing"
-GPU_CONFIGS_SHEET = "gpu_configs"
+WORKLOADS_FILE = "workloads.csv"
+PRICING_FILE = "pricing.csv"
+GPU_CONFIGS_FILE = "gpu_configs.csv"
 
 # Redsand brand colors
 REDSAND_RED = "#D71920"
@@ -21,48 +18,42 @@ REDSAND_GREY = "#F4F4F4"
 REDSAND_DARK = "#222222"
 
 # -------------------
-# GOOGLE SHEETS SETUP
-# -------------------
-SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], SCOPE)
-client = gspread.authorize(creds)
-
-def load_sheet(sheet_name):
-    spreadsheet = client.open_by_key(SHEET_ID)
-    ws = spreadsheet.worksheet(sheet_name.strip())
-    df = pd.DataFrame(ws.get_all_records())
-    # Normalize column names to lowercase and strip spaces/quotes
-    df.columns = df.columns.str.strip().str.replace('"', '').str.replace("'", "").str.lower()
-    return df
-
-# -------------------
 # LOAD DATA
 # -------------------
-workloads_df = load_sheet(WORKLOADS_SHEET)
-pricing_df = load_sheet(PRICING_SHEET)
-gpu_configs_df = load_sheet(GPU_CONFIGS_SHEET)
+@st.cache_data
+def load_csv(filename):
+    df = pd.read_csv(filename)
+    df.columns = df.columns.str.strip()
+    return df
+
+workloads_df = load_csv(WORKLOADS_FILE)
+pricing_df = load_csv(PRICING_FILE)
+gpu_configs_df = load_csv(GPU_CONFIGS_FILE)
 
 # -------------------
-# UI SETUP
+# PAGE SETUP
 # -------------------
 st.set_page_config(page_title="Cloud GPU Cost Visualiser", page_icon="☁️", layout="wide")
 
 # Logo
-logo = Image.open("logo.png")
-buffered = BytesIO()
-logo.save(buffered, format="PNG")
-img_str = base64.b64encode(buffered.getvalue()).decode()
-st.markdown(
-    f"""
-    <div style="display: flex; align-items: center; justify-content: space-between;">
-        <a href="https://redsand.ai" target="_blank">
-            <img src="data:image/png;base64,{img_str}" width="120">
-        </a>
-        <h1 style="color:{REDSAND_RED}; margin: 0;">☁️ Cloud GPU Cost Visualiser</h1>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+try:
+    logo = Image.open("logo.png")
+    buffered = BytesIO()
+    logo.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    st.markdown(
+        f"""
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <a href="https://redsand.ai" target="_blank">
+                <img src="data:image/png;base64,{img_str}" width="120">
+            </a>
+            <h1 style="color:{REDSAND_RED}; margin: 0;">☁️ Cloud GPU Cost Visualiser</h1>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+except FileNotFoundError:
+    st.markdown(f"<h1 style='color:{REDSAND_RED};'>☁️ Cloud GPU Cost Visualiser</h1>", unsafe_allow_html=True)
 
 # -------------------
 # STEP 1: SELECT WORKLOAD
@@ -77,38 +68,38 @@ num_users = st.select_slider("Select number of users", options=user_range)
 
 # STEP 3: AUTO GPU SELECTION
 workload_row = workloads_df[workloads_df["workload_name"] == workload_name].iloc[0]
-default_gpu_type = workload_row["gpu_type"]
-users_per_gpu = workload_row["users_per_gpu"]
 
-# Auto calculation
+users_per_gpu = workload_row["users_per_gpu"]
+gpu_type_auto = workload_row["gpu_type"]
+
 auto_gpus_needed = max(1, int((num_users / users_per_gpu)))
 
 # STEP 4: MANUAL OVERRIDE
+st.subheader("GPU Configuration")
+st.write(f"**Auto-selected GPU Type:** {gpu_type_auto} ({auto_gpus_needed} GPUs recommended)")
+
 manual_mode = st.checkbox("Manual GPU selection", value=False)
 
 if manual_mode:
-    if default_gpu_type in pricing_df["gpu_type"].values:
-        default_index = pricing_df[pricing_df["gpu_type"] == default_gpu_type].index[0]
-    else:
-        default_index = 0
-    gpu_type = st.selectbox("GPU Type", pricing_df["gpu_type"].unique(), index=default_index)
+    gpu_type = st.selectbox("GPU Type", pricing_df["gpu_type"].unique(), 
+                            index=pricing_df[pricing_df["gpu_type"] == gpu_type_auto].index[0] 
+                            if gpu_type_auto in pricing_df["gpu_type"].values else 0)
     num_gpus = st.number_input("Number of GPUs", min_value=1, value=auto_gpus_needed)
     if num_gpus < auto_gpus_needed:
         st.warning(f"⚠️ Selected GPUs may be underpowered. Recommended: {auto_gpus_needed} GPUs")
 else:
-    gpu_type = default_gpu_type
+    gpu_type = gpu_type_auto
     num_gpus = auto_gpus_needed
 
-# STEP 5: CALCULATE COSTS
+# -------------------
+# STEP 5: COST CALCULATION
+# -------------------
 gpu_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "gpu_hourly_usd"].values[0]
 storage_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "storage_price_per_gb_month"].values[0]
 egress_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "egress_price_per_gb"].values[0]
 
-storage_gb_per_gpu = workload_row["storage_gb_per_gpu_base"] + (num_users * workload_row["storage_gb_per_user"])
-egress_gb_per_gpu = workload_row["egress_gb_per_gpu_base"] + (num_users * workload_row["egress_gb_per_user"])
-
-storage_gb = num_gpus * storage_gb_per_gpu
-egress_gb = num_gpus * egress_gb_per_gpu
+storage_gb = (workload_row["storage_gb_per_gpu_base"] + (num_users * workload_row["storage_gb_per_user"])) * num_gpus
+egress_gb = (workload_row["egress_gb_per_gpu_base"] + (num_users * workload_row["egress_gb_per_user"])) * num_gpus
 
 gpu_monthly_cost = gpu_price * 24 * 30 * num_gpus
 storage_monthly_cost = storage_price * storage_gb
@@ -159,7 +150,7 @@ st.markdown(
     <small>
     * Estimates based on selected workload, GPU type, and user count.  
     * Costs include GPU compute, storage, and egress.  
-    * Actual cloud pricing may vary.
+    * Update CSV files to adjust workloads, pricing, or GPU configs.
     </small>
     """,
     unsafe_allow_html=True
