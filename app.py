@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
+import math
 import plotly.graph_objects as go
 from PIL import Image
 import base64
 from io import BytesIO
-import numpy as np
 
 # -------------------
 # CONFIG
@@ -13,12 +13,15 @@ REDSAND_RED = "#D71920"
 REDSAND_GREY = "#F4F4F4"
 REDSAND_DARK = "#222222"
 
-# Load CSV files
+# -------------------
+# LOAD DATA
+# -------------------
 workloads_df = pd.read_csv("workloads.csv")
 pricing_df = pd.read_csv("pricing.csv")
+gpu_configs_df = pd.read_csv("gpu_configs.csv")
 
 # -------------------
-# UI SETUP
+# STREAMLIT PAGE CONFIG
 # -------------------
 st.set_page_config(page_title="Cloud GPU Cost Visualiser", page_icon="☁️", layout="wide")
 
@@ -40,28 +43,59 @@ st.markdown(
 )
 
 # -------------------
-# WORKLOAD SELECTION
+# STEP 1: SELECT WORKLOAD
 # -------------------
 st.subheader("Select Workload")
 workload_name = st.selectbox("Workload", workloads_df["workload_name"].unique())
 
-# Slider for number of users (start at 10)
+# STEP 2: NUMBER OF USERS
 st.subheader("Number of Users")
-user_range = list(range(10, 10001, 10))
-num_users = st.select_slider("Select number of users", options=user_range, value=10)
+user_range = list(range(10, 110, 10)) + list(range(200, 10001, 100))
+num_users = st.select_slider("Select number of users", options=user_range)
 
-# -------------------
-# CALCULATE GPU CONFIG
-# -------------------
+# Get workload details
 workload_row = workloads_df[workloads_df["workload_name"] == workload_name].iloc[0]
-default_gpu_type = workload_row["gpu_type"]
+gpu_type = workload_row["gpu_type"]
 users_per_gpu = workload_row["users_per_gpu"]
 
-auto_gpus_needed = max(1, int((num_users / users_per_gpu)))
+# -------------------
+# AUTO GPU COUNT ROUNDING
+# -------------------
+def round_to_4_or_8(x):
+    if x <= 4:
+        return 4
+    elif x <= 8:
+        return 8
+    else:
+        remainder = x % 8
+        return x if remainder == 0 else x + (8 - remainder)
 
-gpu_price = pricing_df.loc[pricing_df["gpu_type"] == default_gpu_type, "gpu_hourly_usd"].values[0]
-storage_price = pricing_df.loc[pricing_df["gpu_type"] == default_gpu_type, "storage_price_per_gb_month"].values[0]
-egress_price = pricing_df.loc[pricing_df["gpu_type"] == default_gpu_type, "egress_price_per_gb"].values[0]
+auto_gpus_needed = max(1, math.ceil(num_users / users_per_gpu))
+auto_gpus_needed = round_to_4_or_8(auto_gpus_needed)
+
+# -------------------
+# DISPLAY CONFIG SUMMARY
+# -------------------
+with st.container():
+    st.markdown(
+        f"""
+        <div style="background-color: {REDSAND_GREY}; padding: 15px; border-radius: 10px; border: 2px solid {REDSAND_RED};">
+            <h3 style="color:{REDSAND_DARK}; margin-top: 0;">📊 Selected Configuration</h3>
+            <p><strong>Workload:</strong> {workload_name}</p>
+            <p><strong>Concurrent Users:</strong> {num_users}</p>
+            <p><strong>GPU Type:</strong> {gpu_type}</p>
+            <p><strong>Number of GPUs:</strong> {auto_gpus_needed}</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# -------------------
+# CALCULATE COSTS
+# -------------------
+gpu_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "gpu_hourly_usd"].values[0]
+storage_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "storage_price_per_gb_month"].values[0]
+egress_price = pricing_df.loc[pricing_df["gpu_type"] == gpu_type, "egress_price_per_gb"].values[0]
 
 storage_gb_per_gpu = workload_row["storage_gb_per_gpu_base"] + (num_users * workload_row["storage_gb_per_user"])
 egress_gb_per_gpu = workload_row["egress_gb_per_gpu_base"] + (num_users * workload_row["egress_gb_per_user"])
@@ -76,53 +110,39 @@ egress_monthly_cost = egress_price * egress_gb
 total_monthly_cost = gpu_monthly_cost + storage_monthly_cost + egress_monthly_cost
 
 # -------------------
-# DISPLAY CONFIGURATION
+# TOTAL COST DISPLAY
 # -------------------
-col1, col2 = st.columns([1, 1])
-
-with col1:
-    st.markdown(f"""
-    <div style="background-color:{REDSAND_GREY}; padding:15px; border-radius:10px;">
-        <h3 style="color:{REDSAND_RED};">Selected Configuration</h3>
-        <p><b>Workload:</b> {workload_name}</p>
-        <p><b>GPU Type:</b> {default_gpu_type}</p>
-        <p><b>Number of GPUs:</b> {auto_gpus_needed}</p>
-        <p><b>Users:</b> {num_users}</p>
-        <h2 style="color:{REDSAND_RED};">💰 ${total_monthly_cost:,.0f} / month</h2>
-    </div>
-    """, unsafe_allow_html=True)
+st.markdown(f"<h2 style='color:{REDSAND_RED};'>💰 Total Monthly Cost: ${total_monthly_cost:,.0f}</h2>", unsafe_allow_html=True)
 
 # -------------------
 # COST VS USERS CURVE
 # -------------------
-# Create a smooth curve for cost scaling
-user_values = np.linspace(10, 10000, 100)
+user_values = list(range(10, 1001, 10))
 cost_values = []
 for u in user_values:
-    gpus_needed = max(1, int((u / users_per_gpu)))
-    s_gb = gpus_needed * (workload_row["storage_gb_per_gpu_base"] + (u * workload_row["storage_gb_per_user"]))
-    e_gb = gpus_needed * (workload_row["egress_gb_per_gpu_base"] + (u * workload_row["egress_gb_per_user"]))
+    gpus_needed = round_to_4_or_8(max(1, math.ceil(u / users_per_gpu)))
+    storage_gb = gpus_needed * (workload_row["storage_gb_per_gpu_base"] + (u * workload_row["storage_gb_per_user"]))
+    egress_gb = gpus_needed * (workload_row["egress_gb_per_gpu_base"] + (u * workload_row["egress_gb_per_user"]))
     gpu_cost = gpu_price * 24 * 30 * gpus_needed
-    storage_cost = storage_price * s_gb
-    egress_cost = egress_price * e_gb
+    storage_cost = storage_price * storage_gb
+    egress_cost = egress_price * egress_gb
     total_cost = gpu_cost + storage_cost + egress_cost
     cost_values.append(total_cost)
 
-with col2:
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=user_values,
-        y=cost_values,
-        mode='lines',
-        line=dict(color=REDSAND_RED, width=3),
-        name="Cost vs Users"
-    ))
-    fig.update_layout(
-        title="Cloud Cost Scaling",
-        xaxis_title="Number of Users",
-        yaxis_title="Monthly Cost (USD)",
-        plot_bgcolor=REDSAND_GREY,
-        paper_bgcolor=REDSAND_GREY,
-        font=dict(color=REDSAND_DARK)
-    )
-    st.plotly_chart(fig, use_container_width=True)
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    x=user_values,
+    y=cost_values,
+    mode='lines',
+    line=dict(color=REDSAND_RED, width=3),
+    name='Total Cost'
+))
+fig.update_layout(
+    title="Scaling Cost with Users",
+    xaxis_title="Number of Concurrent Users",
+    yaxis_title="Monthly Cost (USD)",
+    plot_bgcolor=REDSAND_GREY,
+    paper_bgcolor=REDSAND_GREY,
+    font=dict(color=REDSAND_DARK)
+)
+st.plotly_chart(fig, use_container_width=True)
