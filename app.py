@@ -3,9 +3,13 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import math
+import matplotlib.pyplot as plt
+from PIL import Image
+from io import BytesIO
+import base64
 
 # ======= SETTINGS =======
-SHEET_ID = "1fz_jPB2GkHgbAhlZmHOr4g0MVQW3Wyw_jg_nLmmkHIk"  # Your sheet ID
+SHEET_ID = "1fz_jPB2GkHgbAhlZmHOr4g0MVQW3Wyw_jg_nLmmkHIk"
 WORKLOADS_SHEET = "workloads"
 PRICING_SHEET = "pricing"
 CONFIG_SHEET = "config"
@@ -22,7 +26,6 @@ client = gspread.authorize(credentials)
 def load_sheet(sheet_name):
     ws = client.open_by_key(SHEET_ID).worksheet(sheet_name)
     df = pd.DataFrame(ws.get_all_records())
-    # Clean headers: strip spaces, remove zero-width chars, lower-case
     df.columns = df.columns.str.strip().str.replace('\u200b', '').str.lower()
     return df
 
@@ -36,18 +39,21 @@ default_workload = config_df.loc[config_df['setting_name'] == 'default_workload'
 max_users = int(config_df.loc[config_df['setting_name'] == 'max_users', 'value'].values[0])
 currency = config_df.loc[config_df['setting_name'] == 'currency', 'value'].values[0]
 
-# ======= STREAMLIT PAGE CONFIG =======
-st.set_page_config(
-    page_title="Cloud AI Cost Visualiser",
-    layout="wide"
-)
+# ======= PAGE CONFIG =======
+st.set_page_config(page_title="Cloud AI Cost Visualiser", layout="wide")
+
+# ======= LOGO BASE64 ENCODE =======
+logo = Image.open("logo.png")
+buffered = BytesIO()
+logo.save(buffered, format="PNG")
+img_str = base64.b64encode(buffered.getvalue()).decode()
 
 # ======= HEADER =======
 col1, col2 = st.columns([0.1, 0.9])
 with col1:
     st.markdown(
         f'<a href="https://redsand.ai" target="_blank">'
-        f'<img src="https://redsand.ai/assets/logo.png" width="80"></a>',
+        f'<img src="data:image/png;base64,{img_str}" width="80"></a>',
         unsafe_allow_html=True
     )
 with col2:
@@ -69,30 +75,22 @@ storage_gb_per_gpu = float(workload_row["storage_gb_per_gpu"])
 egress_gb_per_gpu_base = float(workload_row["egress_gb_per_gpu_base"])
 egress_gb_per_user = float(workload_row["egress_gb_per_user"])
 
-# Scale GPU count
 gpu_count = max(base_gpus, math.ceil(num_users / users_per_gpu))
 
-# Pricing row
 pricing_row = pricing_df[pricing_df['gpu_type'] == gpu_type].iloc[0]
 gpu_hourly = float(pricing_row["blended_hourly_usd"])
 storage_price_per_gb = float(pricing_row["storage_price_per_gb_month"])
 egress_price_per_gb = float(pricing_row["egress_price_per_gb"])
 
-# Compute cost
 compute_cost = gpu_count * gpu_hourly * hours_per_month
-
-# Storage cost
 total_storage_gb = gpu_count * storage_gb_per_gpu
 storage_cost = total_storage_gb * storage_price_per_gb
-
-# Egress cost
 total_egress_gb = gpu_count * egress_gb_per_gpu_base + (egress_gb_per_user * num_users)
 egress_cost = total_egress_gb * egress_price_per_gb
 
-# Total cost
 total_cost = compute_cost + storage_cost + egress_cost
 
-# ======= DISPLAY =======
+# ======= COST DISPLAY =======
 st.markdown(f"<h2 style='color:red;'>{currency} {total_cost:,.0f} / month</h2>", unsafe_allow_html=True)
 
 colA, colB, colC = st.columns(3)
@@ -100,8 +98,25 @@ colA.metric("Compute Cost", f"{currency} {compute_cost:,.0f}")
 colB.metric("Storage Cost", f"{currency} {storage_cost:,.0f}")
 colC.metric("Egress Cost", f"{currency} {egress_cost:,.0f}")
 
-# GPU info
-st.markdown(f"**GPU Type:** {gpu_type} &nbsp;&nbsp; **GPU Count:** {gpu_count}")
+st.write(f"**GPU Type:** {gpu_type} | **GPUs Used:** {gpu_count}")
 
+# ======= GRAPH =======
+user_range = list(range(1, max_users + 1, max(1, max_users // 20)))
+costs = []
+for u in user_range:
+    g_count = max(base_gpus, math.ceil(u / users_per_gpu))
+    comp = g_count * gpu_hourly * hours_per_month
+    store = g_count * storage_gb_per_gpu * storage_price_per_gb
+    egress = (g_count * egress_gb_per_gpu_base + (egress_gb_per_user * u)) * egress_price_per_gb
+    costs.append(comp + store + egress)
+
+fig, ax = plt.subplots()
+ax.plot(user_range, costs, marker="o", color="red")
+ax.set_xlabel("Number of Concurrent Users")
+ax.set_ylabel(f"Monthly Cost ({currency})")
+ax.set_title(f"Cost Scaling for {selected_workload}")
+st.pyplot(fig)
+
+# ======= FOOTNOTE =======
 st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown("<p style='font-size: 12px; color: gray;'>*All prices are estimates based on blended public cloud rates. Actual costs may vary. Egress and storage prices are based on standard public cloud pricing and scale with usage.*</p>", unsafe_allow_html=True)
+st.markdown("<p style='font-size:12px;color:gray;'>* This tool provides an aggregated estimate based on typical cloud pricing and workload profiles. Actual costs may vary depending on provider, region, and usage patterns.</p>", unsafe_allow_html=True)
