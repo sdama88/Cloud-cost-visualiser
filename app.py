@@ -29,17 +29,15 @@ client = gspread.authorize(creds)
 
 def load_sheet(sheet_name):
     spreadsheet = client.open_by_key(SHEET_ID)
-    available_sheets = [ws.title.strip() for ws in spreadsheet.worksheets()]
-    st.write("Available sheets:", available_sheets)
-
-    # Normalize sheet name for matching
-    sheet_name_clean = sheet_name.strip()
+    available_sheets = [ws.title.strip().lower() for ws in spreadsheet.worksheets()]
+    sheet_name_clean = sheet_name.strip().lower()
     if sheet_name_clean not in available_sheets:
-        raise ValueError(f"Worksheet '{sheet_name}' not found. Available: {available_sheets}")
-
-    ws = spreadsheet.worksheet(sheet_name_clean)
+        st.error(f"Worksheet '{sheet_name}' not found. Available: {available_sheets}")
+        st.stop()
+    ws = spreadsheet.worksheet(sheet_name)
     df = pd.DataFrame(ws.get_all_records())
-    df.columns = df.columns.str.strip().str.replace('"', '').str.replace("'", "")
+    # Normalize column names
+    df.columns = df.columns.str.strip().str.lower().str.replace('"', '').str.replace("'", "").str.replace(" ", "_")
     return df
 
 workloads_df = load_sheet(WORKLOADS_SHEET)
@@ -84,17 +82,14 @@ workload_row = workloads_df[workloads_df["workload_name"] == workload_name].iloc
 default_gpu_type = workload_row["gpu_type"]
 default_base_gpus = workload_row["base_gpus"]
 
-# Logic: auto-calc required GPUs
 users_per_gpu = workload_row["users_per_gpu"]
-auto_gpus_needed = max(1, int((num_users / users_per_gpu) * workload_row["base_gpus"]))
+auto_gpus_needed = max(1, int((num_users / users_per_gpu) * default_base_gpus))
 
 # STEP 4: MANUAL OVERRIDE
 manual_mode = st.checkbox("Manual GPU selection", value=False)
-
 if manual_mode:
     gpu_type = st.selectbox("GPU Type", pricing_df["gpu_type"].unique(), index=pricing_df[pricing_df["gpu_type"] == default_gpu_type].index[0])
     num_gpus = st.number_input("Number of GPUs", min_value=1, value=auto_gpus_needed)
-    # Feedback
     if num_gpus < auto_gpus_needed:
         st.warning(f"⚠️ Selected GPUs may be underpowered. Recommended: {auto_gpus_needed} GPUs")
 else:
@@ -125,31 +120,10 @@ st.markdown(f"<h2 style='color:{REDSAND_RED};'>💰 Total Monthly Cost: ${total_
 
 # Cost breakdown chart
 fig = go.Figure()
-fig.add_trace(go.Bar(
-    name="GPU Cost",
-    x=["Total Cost"],
-    y=[gpu_monthly_cost],
-    marker_color=REDSAND_RED
-))
-fig.add_trace(go.Bar(
-    name="Storage Cost",
-    x=["Total Cost"],
-    y=[storage_monthly_cost],
-    marker_color="#666666"
-))
-fig.add_trace(go.Bar(
-    name="Egress Cost",
-    x=["Total Cost"],
-    y=[egress_monthly_cost],
-    marker_color="#999999"
-))
-fig.update_layout(
-    barmode='stack',
-    title="Cost Breakdown",
-    plot_bgcolor=REDSAND_GREY,
-    paper_bgcolor=REDSAND_GREY,
-    font=dict(color=REDSAND_DARK)
-)
+fig.add_trace(go.Bar(name="GPU Cost", x=["Total Cost"], y=[gpu_monthly_cost], marker_color=REDSAND_RED))
+fig.add_trace(go.Bar(name="Storage Cost", x=["Total Cost"], y=[storage_monthly_cost], marker_color="#666666"))
+fig.add_trace(go.Bar(name="Egress Cost", x=["Total Cost"], y=[egress_monthly_cost], marker_color="#999999"))
+fig.update_layout(barmode='stack', title="Cost Breakdown", plot_bgcolor=REDSAND_GREY, paper_bgcolor=REDSAND_GREY, font=dict(color=REDSAND_DARK))
 st.plotly_chart(fig, use_container_width=True)
 
 # -------------------
