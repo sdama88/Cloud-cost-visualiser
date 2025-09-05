@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import math
 
 # -------------------
 # CONFIG
@@ -38,11 +37,13 @@ st.markdown(
 # -------------------
 # ROUNDING FUNCTION
 # -------------------
-def round_up_gpus(n):
-    """Round GPU count to hyperscaler-friendly sizes: 4, 8, 16, 32, ..."""
-    if n <= 4:
-        return 4
-    return 2 ** math.ceil(math.log2(n))
+def round_up_gpus(n, gpu_type):
+    """Round GPU count to multiples of 4 (L40S) or 8 (others)."""
+    if gpu_type == "L40S":
+        step = 4
+    else:
+        step = 8
+    return max(step, ((n + step - 1) // step) * step)
 
 # -------------------
 # WORKLOAD SELECTION
@@ -50,6 +51,7 @@ def round_up_gpus(n):
 st.subheader("Select Workload")
 workload_name = st.selectbox("Workload", workloads_df["workload_name"].unique())
 
+# Number of Users
 st.subheader("Number of Concurrent Human Users")
 num_users = st.slider("Select number of users", min_value=10, max_value=1000, step=10, value=10)
 
@@ -60,18 +62,16 @@ workload_row = workloads_df[workloads_df["workload_name"] == workload_name].iloc
 default_gpu_type = workload_row["gpu_type"]
 users_per_gpu = workload_row["users_per_gpu"]
 
-raw_gpus_needed = max(1, int(num_users / users_per_gpu))
-auto_gpus_needed = round_up_gpus(raw_gpus_needed)
+raw_gpus_needed = max(1, int((num_users / users_per_gpu)))
+auto_gpus_needed = round_up_gpus(raw_gpus_needed, default_gpu_type)
 
 gpu_type = default_gpu_type
 
 # -------------------
 # SILENT GPU UPGRADE
 # -------------------
-upgrade_row = upgrade_rules_df[
-    (upgrade_rules_df["current_gpu"] == gpu_type) &
-    (num_users >= upgrade_rules_df["user_threshold"])
-]
+upgrade_row = upgrade_rules_df[(upgrade_rules_df["current_gpu"] == gpu_type) &
+                                (num_users >= upgrade_rules_df["user_threshold"])]
 if not upgrade_row.empty:
     gpu_type = upgrade_row.iloc[0]["upgrade_gpu"]
 
@@ -118,14 +118,12 @@ with col2:
 user_values = list(range(10, 1001, 10))
 cost_values = []
 for u in user_values:
-    raw_gpus = max(1, int(u / users_per_gpu))
-    gpus_needed = round_up_gpus(raw_gpus)
+    gpus_needed = max(1, int((u / users_per_gpu)))
+    gpus_needed = round_up_gpus(gpus_needed, default_gpu_type)
 
     gpu_sel = default_gpu_type
-    upgrade_check = upgrade_rules_df[
-        (upgrade_rules_df["current_gpu"] == gpu_sel) &
-        (u >= upgrade_rules_df["user_threshold"])
-    ]
+    upgrade_check = upgrade_rules_df[(upgrade_rules_df["current_gpu"] == gpu_sel) &
+                                     (u >= upgrade_rules_df["user_threshold"])]
     if not upgrade_check.empty:
         gpu_sel = upgrade_check.iloc[0]["upgrade_gpu"]
 
