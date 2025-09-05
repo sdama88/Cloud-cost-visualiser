@@ -74,6 +74,8 @@ upgrade_row = upgrade_rules_df[(upgrade_rules_df["current_gpu"] == gpu_type) &
                                 (num_users >= upgrade_rules_df["user_threshold"])]
 if not upgrade_row.empty:
     gpu_type = upgrade_row.iloc[0]["upgrade_gpu"]
+    scaling = upgrade_row.iloc[0].get("scaling_factor", 1)
+    auto_gpus_needed = int(auto_gpus_needed * scaling)
 
 # -------------------
 # COST CALCULATIONS
