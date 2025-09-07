@@ -38,11 +38,8 @@ st.markdown(
 # ROUNDING FUNCTION
 # -------------------
 def round_up_gpus(n, gpu_type):
-    """Round GPU count to multiples of 4 (L40S) or 8 (others)."""
-    if gpu_type == "L40S":
-        step = 4
-    else:
-        step = 8
+    """Round GPU count to multiples of 8 (hyperscaler standard)."""
+    step = 8
     return max(step, ((n + step - 1) // step) * step)
 
 # -------------------
